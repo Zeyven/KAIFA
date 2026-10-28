@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+# Cloud API image (multi-stage). NOT VERIFIED in environments without Docker —
+# see PLANS.md blockers. Local dev without Docker: npm run dev:api on host.
+FROM node:22-slim AS deps
+WORKDIR /repo
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+COPY packages/config/package.json packages/config/
+COPY packages/contracts/package.json packages/contracts/
+COPY packages/db/package.json packages/db/
+COPY packages/domain/package.json packages/domain/
+COPY packages/observability/package.json packages/observability/
+COPY packages/testkit/package.json packages/testkit/
+COPY packages/ui/package.json packages/ui/
+RUN npm ci
+
+FROM deps AS build
+COPY tsconfig.base.json tsconfig.json ./
+COPY packages/ packages/
+COPY apps/api/ apps/api/
+COPY scripts/ scripts/
+RUN npx tsc -b && npm prune --omit=dev
+
+FROM node:22-slim AS runtime
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=build /repo/node_modules ./node_modules
+COPY --from=build /repo/package.json ./
+COPY --from=build /repo/apps/api/dist ./apps/api/dist
+COPY --from=build /repo/apps/api/package.json ./apps/api/
+COPY --from=build /repo/packages/ ./packages/
+EXPOSE 4000
+USER node
+CMD ["node", "apps/api/dist/main.js"]

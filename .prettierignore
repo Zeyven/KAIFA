@@ -1,0 +1,12 @@
+# Hand-authored prose stays as written (formatting gate covers code only)
+**/*.md
+docs/
+harness/
+# Build artifacts
+**/dist/
+**/.next/
+**/node_modules/
+**/coverage/
+package-lock.json
+# Generated contract snapshot is regenerated & diffed, not prettier-formatted
+docs/architecture/openapi.json

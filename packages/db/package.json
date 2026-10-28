@@ -1,0 +1,24 @@
+{
+  "name": "@lanxu/db",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "lanxu-migrate": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "migrate": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@lanxu/config": "^0.1.0",
+    "pg": "^8.16.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1"
+  }
+}

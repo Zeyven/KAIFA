@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+.npm/
+
+# Build output
+dist/
+.next/
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Test / tooling
+coverage/
+.vitest/
+.pgdata*/
+tmp/
+
+# Env & secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

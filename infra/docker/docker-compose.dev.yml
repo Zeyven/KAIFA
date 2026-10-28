@@ -1,0 +1,68 @@
+# Dev stack — LanXu StoreOS (spec §3 infra/docker).
+# Requires Docker. NOT VERIFIED in environments without a Docker daemon
+# (see PLANS.md). Host fallback: embedded PG in tests, npm run dev:api/dev:web.
+#
+#   docker compose -f infra/docker/docker-compose.dev.yml up -d
+#
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: lanxu
+      POSTGRES_PASSWORD: lanxu_dev_password
+      POSTGRES_DB: lanxu
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lanxu -d lanxu']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.api
+    environment:
+      NODE_ENV: development
+      PORT: '4000'
+      DATABASE_URL: postgres://lanxu:lanxu_dev_password@postgres:5432/lanxu?application_name=lanxu-api
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-only-insecure-jwt-secret-change-me-0000000000
+      PAYMENT_PROVIDER: fake
+    ports:
+      - '4000:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+    environment:
+      NODE_ENV: production
+      # Browser must never call localhost — web uses relative URLs and the
+      # Next rewriter/proxy targets this internal service.
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - '3000:3000'
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
