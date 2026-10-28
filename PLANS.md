@@ -11,7 +11,7 @@ gates executed with recorded evidence) · `BLOCKED` (external dependency — nam
 | Phase | Name | Status | Notes |
 |---|---|---|---|
 | 00 | Repository Foundation | DONE | gates 2026-10-28: install/format/lint/typecheck/unit(36)/integration(PG18×3)/openapi/build/audit-0 + live smoke — see harness/build-log.md |
-| 01 | Database Foundation | TODO | real PG 18 (embedded), checksummed migration runner, org/store/identity/RBAC schema |
+| 01 | Database Foundation | DONE | 0001 org/store/identity/RBAC + uuidv7 fn; up/down/checksum/concurrent gates on real PG18; readiness 503→200 — verify exit 0 |
 | 02 | Authentication & Authorization | TODO | scrypt+JWT, store scope, permission/object guards, cross-store IDOR regression |
 | 03 | Room Domain | TODO | room state machine, room/area/bed tables, open/move/cleaning commands, transition tests |
 | 04 | Technician Domain | TODO | technician/skill/shift/status/history |

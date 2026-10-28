@@ -51,3 +51,41 @@ Environment: Node v22.22.3, npm 10.9.8, Linux x64, no Docker/apt egress (see
 - Docker compose / Dockerfiles (no daemon) — file-complete only.
 - GitHub Actions execution (workflow authored; validated only by local equivalent commands).
 - Android toolchain (no JDK/SDK).
+
+---
+
+## 2026-10-28 · Phase 01 Database Foundation (full gate chain)
+
+| # | Command | Exit | Evidence / summary |
+|---|---|---|---|
+| 11 | `npm run verify` (format → lint → typecheck → unit → integration → openapi → build) | 0 | all green in one chain |
+| 12 | `npm test` | 0 | 7 files, 36/36 unit tests |
+| 13 | `npm run test:integration` | 0 | **3 files, 14/14** on embedded PostgreSQL 18: migrations suite (9) + readiness e2e (2) + harness smoke (3) |
+| 14 | `npm audit --audit-level=high` | 0 | still 0 vulnerabilities |
+
+Migration gate highlights (each a test, real PG18): fresh up records sha256 checksum ·
+re-up idempotent · **down(1) + two concurrent up() ⇒ exactly once** (advisory lock) ·
+tampered applied file rejected (MigrationError) · CLI `dist/cli.js status` spawn ✓ ·
+constraint matrix 23505/23503/23514 ✓ · UUIDv7 defaults (org/store/user + 50 bulk) ✓ ·
+RBAC seed spot-checks vs spec §11 ✓ · `/health/ready` 503 pending → 200 after migrate ✓.
+
+### Root causes fixed during Phase 01 (evidence, no papering)
+
+11. Seed SQL: doubled `CASE` introduced by an edit → `= ANY ((CASE…` paren/type error →
+    de-duplicated; `IN (array)` replaced with `= ANY((…)::text[])`.
+12. `lanxu_uuidv7()`: `bytea::uuid` cast does not exist → hex text formatted with hyphens.
+13. `lanxu_uuidv7()`: variant built as `2^62 + rand` yields variant bits `01` (and `2^63`
+    would overflow bigint) → variant nibble assembled as hex `8..b`; test caught it via
+    `isUuidV7` (would have shipped invalid UUIDs — real catch).
+14. Test CTE selected non-existent `organization_id` from RETURNING id-only CTE → fixed to
+    `SELECT id`; dependent tests then passed (cascade root cause was this one query).
+15. Post-`down` assertion wrongly expected zero pending files → pending must equal files on
+    disk; assertion corrected (behavior was right, expectation wrong).
+16. `to_regclass('public.x')` returns unqualified name when schema is in search_path →
+    assertion accepts both forms.
+17. Package-name **self-import** inside `packages/db` resolved to its own `dist` outputs →
+    TS5055; switched to relative import (rule recorded in test header + phase file).
+18. Query row-type generic mismatched selected columns (`id` vs `org_id/store_id/user_id`)
+    → typed accurately.
+19. Phase 00 smoke asserted "no migrations yet" — stale after Phase 01 landed SQL → updated
+    to dynamic mirror of the migrations directory (pending ⇔ files, isCurrent false).

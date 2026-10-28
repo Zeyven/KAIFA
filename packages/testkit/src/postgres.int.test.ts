@@ -1,6 +1,6 @@
 import { describe, expect, it, afterAll, beforeAll } from 'vitest';
 import { startPgHarness, type PgHarness } from './pg-harness';
-import { createPool, Migrator, type Pool } from '@lanxu/db';
+import { createPool, loadMigrations, Migrator, resolveMigrationsDir, type Pool } from '@lanxu/db';
 
 /**
  * Phase 00 environment smoke (ADR-0003): the embedded cluster must be REAL
@@ -50,13 +50,14 @@ describe('embedded PostgreSQL harness', () => {
     }
   });
 
-  it('migrator: fresh DB → status clean, up() no-op with zero migrations', async () => {
+  it('migrator: fresh DB → status readable, pending mirrors files on disk', async () => {
     const migrator = new Migrator(pool);
     const status = await migrator.status();
     expect(status.applied).toEqual([]);
-    expect(status.pending).toEqual([]); // Phase 00 ships no SQL yet; Phase 01 adds 0001
-    const applied = await migrator.up();
-    expect(applied).toEqual([]);
-    expect(await migrator.isCurrent()).toBe(true);
+    // pending must exactly mirror the migrations directory (no phantom entries)
+    const files = loadMigrations(resolveMigrationsDir());
+    expect(status.pending.map((p) => p.name)).toEqual(files.map((f) => f.name));
+    expect(files.length).toBeGreaterThanOrEqual(1); // Phase 01+ ships real SQL
+    expect(await migrator.isCurrent()).toBe(false); // pending ⇒ not current (fail closed)
   });
 });
