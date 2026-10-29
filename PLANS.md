@@ -19,8 +19,8 @@ gates executed with recorded evidence) · `BLOCKED` (external dependency — nam
 | 06 | Visit / ServiceSession | DONE | sessions lifecycle + room/tech sync; visit via room open |
 | 07 | FrontDesk Room Board | DONE | login+board+commands via Next proxy; slice E2E 5/5 |
 | 08 | Clock Board | DONE | queue/recommend UI + explainability + dispatch flow |
-| 09 | Android Enrollment | TODO | device enrollment/binding (needs Android env → likely BLOCKED here) |
-| 10 | Android Room Core | TODO | kiosk flow (env-blocked) |
+| 09 | Device Enrollment | DONE | devices table + enroll/bind/heartbeat/backoffice API; Android APK → row 10 |
+| 10 | Android Room Core | BLOCKED | kiosk UI flows — no JDK/SDK/Maven Central/Google CDN in env (probe in harness/phases/10) |
 | 11 | Order Engine | TODO | order/items/pricing/discount/checkout snapshot |
 | 12 | Cash Payment | TODO | cash sessions + reconciliation |
 | 13 | Split Payment | TODO | multi-payment allocations |
