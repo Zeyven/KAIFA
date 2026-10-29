@@ -1,4 +1,5 @@
 import { Controller, Get, Inject } from '@nestjs/common';
+import { Public } from '../common/decorators';
 import { ApiError } from '@lanxu/contracts';
 import { READINESS, type ReadinessService } from './readiness.service';
 
@@ -6,13 +7,15 @@ import { READINESS, type ReadinessService } from './readiness.service';
 export class HealthController {
   constructor(@Inject(READINESS) private readonly readiness: ReadinessService) {}
 
-  /** Liveness: process is alive. Never touches dependencies. */
+  /** Liveness: process is alive. Never touches dependencies. Public by design (LB probes). */
+  @Public()
   @Get('live')
   live(): { data: { status: 'live' } } {
     return { data: { status: 'live' } };
   }
 
-  /** Readiness: DB reachable + migrations current. 503 envelope when not. */
+  /** Readiness: DB reachable + migrations current. 503 envelope when not. Public by design (orchestrators). */
+  @Public()
   @Get('ready')
   async ready(): Promise<{ data: ReadinessResponse }> {
     const result = await this.readiness.check();

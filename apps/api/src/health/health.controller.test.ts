@@ -42,7 +42,7 @@ describe('health endpoints (Phase 00 slice)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    await app?.close();
   });
 
   it('GET /health/live → 200 envelope + echoes X-Request-Id', async () => {

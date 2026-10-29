@@ -42,31 +42,33 @@ describe('Phase 01 — foundation migrations on real PostgreSQL', () => {
     await harness?.stop();
   });
 
-  it('fresh: up() applies 0001 exactly once and records its checksum', async () => {
+  it('fresh: up() applies every migration exactly once and records its checksums', async () => {
     const before = await migrator.status();
     expect(before.applied).toEqual([]);
 
     const applied = await migrator.up();
-    expect(applied).toEqual(['0001_foundation_identity']);
+    expect(applied).toEqual(['0001_foundation_identity', '0002_rooms_visits_audit_events']);
 
     const after = await migrator.status();
-    expect(after.applied).toHaveLength(1);
+    expect(after.applied.map((a) => a.name)).toEqual([
+      '0001_foundation_identity',
+      '0002_rooms_visits_audit_events',
+    ]);
     expect(after.pending).toEqual([]);
     expect(await migrator.isCurrent()).toBe(true);
 
-    const expectedChecksum = readFileSync(
-      path.join(MIGRATIONS_DIR, '0001_foundation_identity.up.sql'),
-      'utf8',
-    );
     const crypto = await import('node:crypto');
-    const sha = crypto.createHash('sha256').update(expectedChecksum).digest('hex');
-    expect(after.applied[0]?.checksum).toBe(sha);
+    for (const name of applied) {
+      const expectedChecksum = readFileSync(path.join(MIGRATIONS_DIR, `${name}.up.sql`), 'utf8');
+      const sha = crypto.createHash('sha256').update(expectedChecksum).digest('hex');
+      expect(after.applied.find((a) => a.name === name)?.checksum).toBe(sha);
+    }
   });
 
   it('re-running up() is a no-op (idempotent)', async () => {
     expect(await migrator.up()).toEqual([]);
     const status = await migrator.status();
-    expect(status.applied).toHaveLength(1);
+    expect(status.applied).toHaveLength(2);
   });
 
   it('all business PKs default to UUIDv7 (invariant I1)', async () => {
@@ -248,7 +250,8 @@ describe('Phase 01 — foundation migrations on real PostgreSQL', () => {
       env: { ...process.env, DATABASE_URL: harness.connectionString },
       cwd: process.cwd(),
     });
-    expect(stdout).toContain('applied (1): 0001_foundation_identity');
+    expect(stdout).toContain('applied (2): 0001_foundation_identity');
+    expect(stdout).toContain('0002_rooms_visits_audit_events');
     expect(stdout).toContain('pending (0)');
   });
 
@@ -271,9 +274,9 @@ describe('Phase 01 — foundation migrations on real PostgreSQL', () => {
     }
   });
 
-  it('down(1) reverts schema, then concurrent up() applies exactly once (spec §18.2 + §6.4 discipline)', async () => {
-    const reverted = await migrator.down(1);
-    expect(reverted).toEqual(['0001_foundation_identity']);
+  it('down(2) reverts full schema, then concurrent up() applies exactly once (spec §18.2 + §6.4 discipline)', async () => {
+    const reverted = await migrator.down(2);
+    expect(reverted).toEqual(['0002_rooms_visits_audit_events', '0001_foundation_identity']);
 
     const gone = await pool.query<{ t: string | null }>(
       `SELECT to_regclass('public.organizations') AS t`,
@@ -281,14 +284,20 @@ describe('Phase 01 — foundation migrations on real PostgreSQL', () => {
     expect(gone.rows[0]?.t).toBeNull();
     const revertedStatus = await migrator.status();
     expect(revertedStatus.applied).toEqual([]);
-    expect(revertedStatus.pending.map((p) => p.name)).toEqual(['0001_foundation_identity']);
+    expect(revertedStatus.pending.map((p) => p.name)).toEqual([
+      '0001_foundation_identity',
+      '0002_rooms_visits_audit_events',
+    ]);
 
     // two runners race the real apply — advisory lock must serialize them
     const results = await Promise.allSettled([migrator.up(), migrator.up()]);
     expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
 
     const status = await migrator.status();
-    expect(status.applied.map((a) => a.name)).toEqual(['0001_foundation_identity']); // exactly once
+    expect(status.applied.map((a) => a.name)).toEqual([
+      '0001_foundation_identity',
+      '0002_rooms_visits_audit_events',
+    ]); // exactly once, both
     expect(await migrator.isCurrent()).toBe(true);
 
     const back = await pool.query<{ t: string | null }>(
@@ -296,5 +305,9 @@ describe('Phase 01 — foundation migrations on real PostgreSQL', () => {
     );
     // to_regclass returns the unqualified name when the schema is in search_path
     expect(['organizations', 'public.organizations']).toContain(back.rows[0]?.t);
+
+    // 0002's own objects are back too (rooms/audit chain restorable)
+    const rooms = await pool.query<{ t: string | null }>(`SELECT to_regclass('public.rooms') AS t`);
+    expect(['rooms', 'public.rooms']).toContain(rooms.rows[0]?.t);
   });
 });

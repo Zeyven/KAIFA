@@ -69,7 +69,7 @@ describe('readiness against real PostgreSQL', () => {
     const pool = createPool(harness.connectionString, { max: 2 });
     try {
       const applied = await new Migrator(pool).up();
-      expect(applied).toEqual(['0001_foundation_identity']);
+      expect(applied).toEqual(['0001_foundation_identity', '0002_rooms_visits_audit_events']);
     } finally {
       await pool.end();
     }

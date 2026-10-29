@@ -23,6 +23,7 @@ export const WS_EVENT_TYPES = [
   'room.updated',
   'visit.opened',
   'visit.closed',
+  'visit.moved',
   'technician.status_changed',
   'technician.queue_changed',
   'service.assigned',

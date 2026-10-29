@@ -1,7 +1,8 @@
-import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { type AppEnv } from '@lanxu/config';
-import { createPool, Migrator, type Pool } from '@lanxu/db';
+import { Migrator, type Pool } from '@lanxu/db';
 import { ENV } from '../env/env.module';
+import { PG_POOL } from '../db/pg.module';
 
 /** DI token for readiness checking. */
 export const READINESS = 'LANXU_READINESS';
@@ -17,24 +18,21 @@ export interface ReadinessResult {
  * DATABASE_URL we are honestly not_ready (fail closed), never fake-green.
  */
 @Injectable()
-export class ReadinessService implements OnModuleDestroy {
-  private pool: Pool | null = null;
-
-  constructor(@Inject(ENV) private readonly env: AppEnv) {}
+export class ReadinessService {
+  constructor(
+    @Inject(ENV) private readonly env: AppEnv,
+    @Inject(PG_POOL) private readonly pool: Pool | null,
+  ) {}
 
   private getPool(): Pool {
-    if (!this.env.DATABASE_URL) {
+    if (!this.env.DATABASE_URL || !this.pool) {
       throw new Error('DATABASE_URL not configured');
     }
-    this.pool ??= createPool(this.env.DATABASE_URL, {
-      max: 2,
-      application_name: 'lanxu-api-ready',
-    });
     return this.pool;
   }
 
   async check(): Promise<ReadinessResult> {
-    if (!this.env.DATABASE_URL) {
+    if (!this.env.DATABASE_URL || !this.pool) {
       return { status: 'not_ready', checks: { db: 'not_configured' } };
     }
     try {
@@ -52,10 +50,5 @@ export class ReadinessService implements OnModuleDestroy {
       return { status: 'not_ready', checks: { db: 'ok', migrations: 'invalid' } };
     }
     return { status: 'ready', checks: { db: 'ok', migrations: 'ok' } };
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    if (this.pool) await this.pool.end();
-    this.pool = null;
   }
 }

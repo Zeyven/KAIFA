@@ -89,3 +89,89 @@ RBAC seed spot-checks vs spec §11 ✓ · `/health/ready` 503 pending → 200 af
     → typed accurately.
 19. Phase 00 smoke asserted "no migrations yet" — stale after Phase 01 landed SQL → updated
     to dynamic mirror of the migrations directory (pending ⇔ files, isCurrent false).
+
+---
+
+## 2026-10-29 · Phases 02 Authentication + 03 Room Domain (full gate chain)
+
+Batch A (02+03) implemented together: one global auth pipeline + room commands on top of
+migration 0002 (rooms/visits/audit/outbox). Local branch history note: this working tree
+was reconciled with `origin/arena/d40c861f-kaifa` (`c98ed06`, Phase 01) via mixed reset
+before this phase's commit — Phase 00/01 files byte-identical (status showed only 02/03
+paths), remote history preserved.
+
+| # | Command | Exit | Evidence / summary |
+|---|---|---|---|
+| 20 | `npm run verify` (format → lint → typecheck → unit → integration → openapi → build) | 0 | all green in one chain |
+| 21 | `npm test` | 0 | **9 files, 47/47 unit** (adds domain password (5) + room-state machine (6); health suite back to green) |
+| 22 | `npm run test:integration` | 0 | **5 files, 36/36 on embedded PostgreSQL 18**: migrations (9, now 2-migration chain: down(2)+concurrent exactly-once) + readiness (2) + harness (3) + **auth (10)** + **rooms (12)** |
+| 23 | `npm audit --audit-level=high` | 0 | 0 vulnerabilities (jose@6.2.13 added) |
+| 24 | `npm run openapi:check` | 0 | regenerated `docs/architecture/openapi.json` (2 paths, no drift) |
+| 25 | `npm run test:integration` ×3 after pool-error hardening | 0,0,0 | **36/36 each run** — teardown FATAL(57P01) on idle socket now logged via pool `error` listener (pg contract), no uncaught exceptions |
+
+Auth integration highlights (real HTTP → real PG): login store list · wrong-password ≡
+unknown-user (same code+message) · missing/tampered/**forged-expired** JWT (same secret,
+exp actually enforced) · missing & foreign `X-Store-Id` → 403 UNAUTHORIZED_SCOPE ·
+IDOR: store-B clerk reading store-A room → 404 (no existence leak), claiming store A →
+403 · FORBIDDEN names the missing code · 5 fails/60s → 429 even with valid password after
+· `security_events` evidence (LOGIN_FAILED/SUCCESS + AUTHZ_DENIED) · `/v1/auth/me`
+bootstrap ± store context.
+
+Room integration highlights: open → OCCUPIED + visit row + audit row + `store_seq=1`
+outbox + `stores.last_event_seq=1` · double-open → 422 ROOM_OCCUPIED unchanged · stale
+`expectedVersion` → 409 with **no partial write** (no audit row) · move → source DIRTY /
+target OCCUPIED / visit.room_id moved / `visit.moved`+2×`room.updated` · checklist guard
+(422 ROOM_NOT_ELIGIBLE) blocks cleaning-complete · maintenance chain END→VACANT_CLEAN
+(spec §5.1) · disable/enable flips `status` column · `PATCH /v1/rooms/:id` → 404
+(command-endpoint-only, I5) · DB triggers reject direct UPDATE/DELETE on
+audit_logs/security_events/outbox with SQLSTATE **23001 restrict_violation** ·
+cross-store fetch → 404.
+
+### Root causes fixed during Phases 02/03 (never papered over)
+
+20. `login` query selected `u.organization_id` but code read `user.org_id` → `undefined`
+    claim → empty store list + NULL-org security rows + **every protected route 401**
+    (one column-alias bug, three symptoms; caught by integration test, not guessed).
+21. `jose.setExpirationTime(3600)` treats numbers as **absolute unix seconds** → tokens
+    born expired → 401 everywhere despite valid signature → explicit `iat=now`,
+    `exp=now+ttl` (and dropped a non-existent `jose.importKey` API — HS256 takes the raw
+    UTF-8 secret as Uint8Array).
+22. 0002 RBAC grants used one exclusive `CASE` — each role landed in at most ONE branch,
+    so boss/supervisor silently never received `room.maintenance`/`room.disable` (403 on
+    legitimate commands) → one INSERT per capability with `ON CONFLICT DO NOTHING`.
+23. `bumpRoom` used `current_visit_id = COALESCE($3, old)` → clearing on **move** source
+    was impossible (null = keep) → explicit set/clear/keep op; move test's
+    `current_visit_id IS NULL` assertion caught it.
+24. `DatabaseModule` factory injected `ENV` without importing `EnvModule` → DI failure at
+    app boot (health unit suite failed instantly) → module import added.
+25. `AppAuthGuard`/services used bare constructor types → invisible under esbuild
+    (no `emitDecoratorMetadata`) would break tests-only → explicit `@Inject(Class)`
+    convention everywhere; `'APP_GUARD'` string replaced with `@nestjs/core`'s token.
+26. Health routes predated the guard → probes would demand JWT → `@Public()` on
+    `/health/live` + `/health/ready` (orchestrators/LB must reach them).
+27. Maintenance edges inconsistent (RESERVED/DIRTY allowed but missing from test's LEGAL
+    list; occupied rejection had table entry for OCCUPIED but not IN_SERVICE/WAITING_CHECKOUT)
+    → spec §5.1 "non-occupied" implemented uniformly for all four non-occupied states,
+    guard-rejected (ROOM_NOT_ELIGIBLE) for the occupied family; tests assert exact codes.
+28. jose dynamic import under vitest surfaced named exports differently across runs →
+    irrelevant once `importKey` myth removed; loader now uses jose's own types
+    (`import type * as Jose`) — no hand-rolled casts.
+29. Test expected append-only trigger SQLSTATE `55000`; actual (correct) code for
+    `restrict_violation` is **`23001`** — verified empirically against real PG before
+    changing the expectation (migration was right, expectation wrong).
+30. Stale Phase-01 assertions after 0002 landed (migrations suite assumed a single
+    migration; ready test hard-coded `['0001…']`) → generalized to the full chain
+    (applied = both files, down(2), checksum per file, CLI `applied (2)`).
+31. Test expectations vs spec: `MAINTENANCE_END → VACANT_CLEAN` (spec table) and
+    checklist-failure → `ROOM_NOT_ELIGIBLE` (guard code, edge exists) — machine matched
+    spec, expectations corrected (not the machine).
+32. Integration run exited 1 with an **uncaught** pg `57P01 terminating connection due to
+    administrator command` from an idle pooled socket during harness teardown (all 36
+    tests had passed) → root fix in `createPool`: pool-level `error` listener as pg
+    documents for idle-client async errors; in-flight query losses still reject their
+    queries (loudly). Verified stable: 3 consecutive integration runs exit 0.
+
+### NOT VERIFIED in this environment (unchanged)
+
+- Docker compose / Dockerfiles (no daemon), GitHub Actions run (workflow authored),
+  Android toolchain, restore drill (Phase 01 note).

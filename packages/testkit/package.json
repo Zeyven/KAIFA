@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@lanxu/db": "^0.1.0",
+    "@lanxu/domain": "^0.1.0",
     "embedded-postgres": "18.4.0-beta.17"
   },
   "devDependencies": {
