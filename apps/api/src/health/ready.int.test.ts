@@ -69,7 +69,14 @@ describe('readiness against real PostgreSQL', () => {
     const pool = createPool(harness.connectionString, { max: 2 });
     try {
       const applied = await new Migrator(pool).up();
-      expect(applied).toEqual(['0001_foundation_identity', '0002_rooms_visits_audit_events']);
+      // disk-driven: a new migration must never silently pass/fail this gate
+      const { readdirSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const expected = readdirSync(join(process.cwd(), 'packages', 'db', 'migrations'))
+        .filter((f: string) => f.endsWith('.up.sql'))
+        .map((f: string) => f.replace(/\.up\.sql$/, ''))
+        .sort();
+      expect(applied).toEqual(expected);
     } finally {
       await pool.end();
     }

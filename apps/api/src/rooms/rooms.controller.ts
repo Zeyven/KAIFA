@@ -69,7 +69,7 @@ export class RoomsController {
   }
 
   @RequirePermissions('room.clean')
-  @Post(':roomId/cleaning-start')
+  @Post(':roomId/cleaning/start')
   cleaningStart(
     @Req() req: FastifyRequest,
     @Param('roomId', ParseUUIDPipe) roomId: string,
@@ -81,7 +81,7 @@ export class RoomsController {
   }
 
   @RequirePermissions('room.clean')
-  @Post(':roomId/cleaning-complete')
+  @Post(':roomId/cleaning/complete')
   cleaningComplete(
     @Req() req: FastifyRequest,
     @Param('roomId', ParseUUIDPipe) roomId: string,
@@ -93,7 +93,7 @@ export class RoomsController {
   }
 
   @RequirePermissions('room.maintenance')
-  @Post(':roomId/maintenance-start')
+  @Post(':roomId/maintenance/start')
   maintenanceStart(
     @Req() req: FastifyRequest,
     @Param('roomId', ParseUUIDPipe) roomId: string,
@@ -105,7 +105,7 @@ export class RoomsController {
   }
 
   @RequirePermissions('room.maintenance')
-  @Post(':roomId/maintenance-end')
+  @Post(':roomId/maintenance/end')
   maintenanceEnd(
     @Req() req: FastifyRequest,
     @Param('roomId', ParseUUIDPipe) roomId: string,

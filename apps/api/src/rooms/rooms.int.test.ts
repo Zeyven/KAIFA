@@ -296,7 +296,7 @@ describe('room commands (integration)', () => {
   it('cleaning chain: DIRTY → CLEANING → VACANT_CLEAN with guards (checklist blocks)', async () => {
     const start = await call({
       method: 'POST',
-      url: `/v1/rooms/${tenant.roomClean1}/cleaning-start`,
+      url: `/v1/rooms/${tenant.roomClean1}/cleaning/start`,
       token,
       storeId: tenant.storeA,
       body: {},
@@ -308,7 +308,7 @@ describe('room commands (integration)', () => {
     // edge exists, guard fails → ROOM_NOT_ELIGIBLE (machine-readable)
     const fail = await call({
       method: 'POST',
-      url: `/v1/rooms/${tenant.roomClean1}/cleaning-complete`,
+      url: `/v1/rooms/${tenant.roomClean1}/cleaning/complete`,
       token,
       storeId: tenant.storeA,
       body: { checklistPassed: false },
@@ -317,7 +317,7 @@ describe('room commands (integration)', () => {
 
     const done = await call({
       method: 'POST',
-      url: `/v1/rooms/${tenant.roomClean1}/cleaning-complete`,
+      url: `/v1/rooms/${tenant.roomClean1}/cleaning/complete`,
       token,
       storeId: tenant.storeA,
       body: { checklistPassed: true },
@@ -330,7 +330,7 @@ describe('room commands (integration)', () => {
   it('cleaning-start on occupied room → 422 INVALID_STATE_TRANSITION', async () => {
     const res = await call({
       method: 'POST',
-      url: `/v1/rooms/${tenant.roomClean2}/cleaning-start`,
+      url: `/v1/rooms/${tenant.roomClean2}/cleaning/start`,
       token,
       storeId: tenant.storeA,
       body: {},
@@ -341,7 +341,7 @@ describe('room commands (integration)', () => {
   it('maintenance + disable/enable chains (status column follows machine)', async () => {
     const start = await call({
       method: 'POST',
-      url: `/v1/rooms/${tenant.roomDirty}/maintenance-start`,
+      url: `/v1/rooms/${tenant.roomDirty}/maintenance/start`,
       token,
       storeId: tenant.storeA,
       body: {},
@@ -351,7 +351,7 @@ describe('room commands (integration)', () => {
 
     const end = await call({
       method: 'POST',
-      url: `/v1/rooms/${tenant.roomDirty}/maintenance-end`,
+      url: `/v1/rooms/${tenant.roomDirty}/maintenance/end`,
       token,
       storeId: tenant.storeA,
       body: { inspectionPassed: true },

@@ -14,8 +14,8 @@ gates executed with recorded evidence) · `BLOCKED` (external dependency — nam
 | 01 | Database Foundation | DONE | 0001 org/store/identity/RBAC + uuidv7 fn; up/down/checksum/concurrent gates on real PG18; readiness 503→200 — verify exit 0 |
 | 02 | Authentication & Authorization | DONE | scrypt+JWT(HS256 pin), global guard public→JWT→store-scope→permissions, rate limit 5/60s, security_events, IDOR 404 — auth.int 10/10, verify exit 0 2026-10-29 |
 | 03 | Room Domain | DONE | 0002 rooms/visits/audit+outbox (append-only 23001), §5.1 machine, open/move/cleaning/maintenance/disable commands (tx+FOR UPDATE+version 409) — rooms.int 12/12 + migrations chain 9/9 |
-| 04 | Technician Domain | TODO | technician/skill/shift/status/history |
-| 05 | Scheduling | TODO | queue/recommend/assign/concurrency |
+| 04 | Technician Domain | DONE | technician/skill/shift/status/history; queue lifecycle |
+| 05 | Scheduling | DONE | queue/recommend/assign/concurrency (§6.4 race green) |
 | 06 | Visit / ServiceSession | TODO | full service execution chain |
 | 07 | FrontDesk Room Board | TODO | first real web vertical slice on live API |
 | 08 | Clock Board | TODO | queue/recommend UI + explainability |

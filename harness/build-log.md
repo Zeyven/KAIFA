@@ -175,3 +175,21 @@ cross-store fetch → 404.
 
 - Docker compose / Dockerfiles (no daemon), GitHub Actions run (workflow authored),
   Android toolchain, restore drill (Phase 01 note).
+
+## 2026-10-29 · Phases 04 Technician + 05 Scheduling (full gate chain)
+
+| Step | What ran | Evidence | Result |
+|---|---|---|---|
+| #26 | integration | `technicians.int.test.ts` — list scoping, clock-in lifecycle (queue entry + history + events + audit), double-clock-in 422, no-shift 403, aide-other-403 vs aide-self-201, lock/break chains, version 409, cross-store 404, append-only 23001, clock-out DEQUEUED | **13/13 passed** |
+| #27 | integration | `scheduling.int.test.ts` — queue ordering, recommend §6.5 shape, LOCKED exclusion, skip/reorder head-flip, compensate force-split (aide 403), skill gate 422, **concurrent double-assign race → exactly [201,422]** single ASSIGNED end state, stale-version 409, cross-store empty queue | **14/14 passed** |
+| #28 | unit | domain `technician-state` (6) + `scheduling` (9: scoring math, 10 hard-constraint reasons, recommend explainability incl. no-fabricated-pick) | **15/15 passed** |
+| #29 | migration | `migrations.int.test.ts` disk-driven over 0001+0002+0003 (up/down ×2, schema + CHECK/append-only assertions, RBAC incl. tech.read/tech.manage grants) | **9/9 passed** |
+| #30 | regression | rooms (12) + auth (10) + ready (2) after seedTenant extension (technicians/shifts/skills/catalog/aide fixture) + Step A route renames `/cleaning/start|complete`, `/maintenance/start|end` | **24/24 passed** |
+| #31 | gate (Phases 04/05 pre-commit) | `npm run verify` captured via log file (`echo $?`, NOT piped — see RC#36) | **EXIT 0**; unit **62/62** (11 files); integration **63/63** (7 files); format/lint/typecheck/openapi/build green |
+
+### Root causes fixed during Phases 04/05 (never papered over)
+
+- **#33 domain export collision**: `canTransition` exported by both `room-state` and `technician-state` (TS2308) → renamed technician variant `canTransitionTechnician` + explicit type imports.
+- **#34 test-order state leak**: failed assertion placed BEFORE the state-restore line left tech2 LOCKED → cascade of 7 failures from 3 real bugs. Root fixes: V90/V60 skill split (tech2 lacks V90 — correct 422), force-denial uses aide@A (clerk lives at storeB → scope 403 message, not perm), success-assign targets the variant the tech HAS skill for; restore mutations run before assertions.
+- **#35 seedTenant alias**: TS generic `no` vs SQL `employee_no` → undefined map keys; fixed with `RETURNING employee_no AS no` + size guard.
+- **#36 verify misread**: `npm run verify | grep` can report the PIPELINE status, not npm's — first "EXIT 0" hid a prettier failure. Rule: `npm run verify > log; echo $?`.
