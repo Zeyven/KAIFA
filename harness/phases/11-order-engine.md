@@ -1,0 +1,12 @@
+# Phase 11 — Order Engine (spec §4.7 Orders core, §5.4, §9.4 math, invariants #7/#11)
+
+- **Goal**: correct money on the bill — server-priced items, immutable settlement snapshots, one live order per visit, mathematically reconcilable totals, checkout freeze.
+- **Scope**: migration 0006 (products/orders/order_items/order_adjustments + order.read + corrective role grants); domain order-state machine (OPEN→IN_SERVICE→PENDING_CHECKOUT + refund chain states pre-declared); OrdersModule (open idempotent-find-or-create, list/get, items, discounts w/ cumulative APPROVAL_THRESHOLD → fail-closed APPROVAL_REQUIRED, checkout w/ active-session guard ORDER_HAS_ACTIVE_SERVICE + version OCC + idempotent re-freeze); session hooks (create ensures order, start marks IN_SERVICE, complete attaches billed snapshot ON CONFLICT-unique); cancel command endpoint + `service.cancelled` event; GET /v1/products; OpenAPI +8 ops.
+- **Files**: packages/db/migrations/0006_orders.*; packages/domain/src/order-state.*; packages/config/src/env.ts (DISCOUNT_APPROVAL_THRESHOLD_CENTS default 10000 — BUSINESS POLICY — REQUIRES PILOT VALIDATION); apps/api/src/orders/*; catalog products; sessions hooks; contracts ERROR_CODES (ORDER_HAS_ACTIVE_SERVICE 422) + events; testkit products; openapi.json.
+- **Acceptance**: catalog price drift never rewrites item history (tested by mutating products mid-suite); a session bills exactly once (partial unique + 23505 test); discounts over threshold fail closed until Phase 23 approval; checkout cannot freeze while sessions run; every mutation emits order.updated with monotonic storeSeq in-tx; totals reconcile (CHECK + assertions).
+- **Tests**: order-state 7; orders.int 8/8; full integration 96/96×11; verify EXIT 0 (unit 92×15).
+- **Security**: object-level store scoping on every route; client cannot supply prices (no price field accepted); order.discount / order.checkout / order.read perms enforced at guard; append-only adjustments (23001) audited via trigger; cash-side paid_cents remains 0 until Phase 12 payments.
+- **Migration**: 0006 additive; down drops in dependency order (items/adjustments before orders; FK constraint on sessions).
+- **Rollback**: down migration + module revert; hooks guarded (no-ops when no changes).
+- **Risk**: IN_SERVICE only flips when an order already exists (auto-created at session create — guaranteed); approval threshold hard-coded in env default → Phase 23 replaces APPROVAL_REQUIRED with approval_requests flow.
+- **DoD / Verification**: `npm run verify` EXIT 0; build-log #50–#53; root causes #55–#59.

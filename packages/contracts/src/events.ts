@@ -33,6 +33,7 @@ export const WS_EVENT_TYPES = [
   'service.extended',
   'service.completed',
   'service.terminated',
+  'service.cancelled',
   'service.changed_technician',
   'order.updated',
   'order.paid',

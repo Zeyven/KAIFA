@@ -48,7 +48,7 @@ subscription limited to stores the principal may read.
 |---|---|
 | Rooms/Visits | `room.updated`, `visit.opened`, `visit.closed` |
 | Technicians | `technician.status_changed`, `technician.queue_changed` |
-| Service | `service.assigned`, `service.acknowledged`, `service.arrived`, `service.started`, `service.extended`, `service.completed`, `service.terminated`, `service.changed_technician` |
+| Service | `service.assigned`, `service.acknowledged`, `service.arrived`, `service.started`, `service.extended`, `service.completed`, `service.terminated`, `service.cancelled`, `service.changed_technician` |
 | Orders/Money | `order.updated`, `order.paid`, `payment.updated`, `refund.updated` |
 | Requests/Devices | `service_request.created`, `service_request.completed`, `device.status_changed` |
 | Control | `hello`, `resume`, `resync_required`, `error` |

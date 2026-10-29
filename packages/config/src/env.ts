@@ -24,6 +24,9 @@ export const envSchema = z
     JWT_SECRET: z.string().min(32).default('dev-only-insecure-jwt-secret-change-me-0000000000'),
     JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(3600),
     PAYMENT_PROVIDER: z.enum(['fake', 'wechat', 'alipay', 'aggregate']).default('fake'),
+    // BUSINESS POLICY — REQUIRES PILOT VALIDATION: discounts above this many
+    // cents must go through approval (spec §11 △ / §21 thresholds unknown).
+    DISCOUNT_APPROVAL_THRESHOLD_CENTS: z.coerce.number().int().min(0).default(10_000),
   })
   .refine(
     (env) =>
@@ -60,6 +63,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     JWT_SECRET: source.JWT_SECRET,
     JWT_ACCESS_TTL_SECONDS: source.JWT_ACCESS_TTL_SECONDS,
     PAYMENT_PROVIDER: source.PAYMENT_PROVIDER,
+    DISCOUNT_APPROVAL_THRESHOLD_CENTS: source.DISCOUNT_APPROVAL_THRESHOLD_CENTS,
   };
   const result = envSchema.safeParse(candidate);
   if (!result.success) {

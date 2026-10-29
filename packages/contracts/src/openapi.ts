@@ -373,6 +373,7 @@ const OPS: Array<{ path: string } & OpSpec> = [
       ['changeService', 'change-service', 'Change variant with price/history update'],
       ['completeSession', 'complete', 'STARTED/ENDING_SOON→COMPLETED; room→WAITING_CHECKOUT'],
       ['terminateSession', 'terminate', 'Emergency terminate (service.terminate)'],
+      ['cancelSession', 'cancel', 'Cancel DRAFT/ASSIGNED booking (§5.3); releases assigned tech'],
     ] as Array<[string, string, string]>
   ).map(([opId, seg, summary]) => ({
     path: `/v1/service-sessions/{sessionId}/${seg}`,
@@ -384,7 +385,11 @@ const OPS: Array<{ path: string } & OpSpec> = [
       seg === 'assign'
         ? z.object({ technicianId: uuid, ...versionFields })
         : seg === 'extend'
-          ? z.object({ deltaMinutes: z.int().positive(), ...versionFields })
+          ? z.object({
+              minutes: z.int().positive().max(480),
+              priceDeltaCents: z.int().min(0).optional(),
+              ...versionFields,
+            })
           : seg === 'change-technician'
             ? z.object({ technicianId: uuid, reason: z.string().optional(), ...versionFields })
             : seg === 'change-service'
@@ -393,7 +398,84 @@ const OPS: Array<{ path: string } & OpSpec> = [
     successBody: dataObj(),
     errors: [404, 409, 422],
   })),
+  // ── orders (Phase 11) ──
+  {
+    path: '/v1/orders',
+    method: 'get',
+    opId: 'listOrders',
+    summary: 'Store orders (status/visitId/today filters; order.read)',
+    query: {
+      status: z.string(),
+      visitId: uuid,
+      today: z.enum(['1', 'true', '0', 'false']),
+      limit: z.coerce.number().int().positive().max(500),
+    },
+    successBody: dataItems({ type: 'object' }),
+  },
+  {
+    path: '/v1/orders/open',
+    method: 'post',
+    opId: 'openOrder',
+    summary: 'Idempotent find-or-create the live bill for a visit (order.checkout)',
+    body: z.object({ visitId: uuid }),
+    successBody: dataObj({ id: { type: 'string' }, status: { type: 'string' } }, ['id']),
+    errors: [404],
+  },
+  {
+    path: '/v1/orders/{orderId}',
+    method: 'get',
+    opId: 'getOrder',
+    summary: 'Order with item/adjustment snapshots + activeSessionCount',
+    params: ['orderId'],
+    successBody: dataObj(),
+    errors: [404],
+  },
+  {
+    path: '/v1/orders/{orderId}/items',
+    method: 'post',
+    opId: 'addOrderItem',
+    summary: 'Ring a line item — price/name snapshotted server-side (never client-supplied)',
+    params: ['orderId'],
+    body: z.object({
+      productId: uuid.optional(),
+      serviceVariantId: uuid.optional(),
+      quantity: z.int().positive().max(999).optional(),
+    }),
+    successBody: dataObj(),
+    errors: [404, 422],
+  },
+  {
+    path: '/v1/orders/{orderId}/discounts',
+    method: 'post',
+    opId: 'applyOrderDiscount',
+    summary: 'Append-only discount adjustment; cumulative over threshold ⇒ APPROVAL_REQUIRED',
+    params: ['orderId'],
+    body: z.object({
+      amountCents: z.int().positive(),
+      reasonCode: z.string().max(60).optional(),
+      orderItemId: uuid.optional(),
+    }),
+    successBody: dataObj(),
+    errors: [404, 422],
+  },
+  {
+    path: '/v1/orders/{orderId}/checkout',
+    method: 'post',
+    opId: 'checkoutOrder',
+    summary: 'Freeze bill at PENDING_CHECKOUT (refuses running sessions); idempotent',
+    params: ['orderId'],
+    body: z.object({ expectedVersion: z.int().nonnegative().optional() }),
+    successBody: dataObj(),
+    errors: [404, 409, 422],
+  },
   // ── catalog ──
+  {
+    path: '/v1/products',
+    method: 'get',
+    opId: 'listProducts',
+    summary: 'Active sellable goods with server list prices (order.read)',
+    successBody: dataItems({ type: 'object' }),
+  },
   {
     path: '/v1/service-variants',
     method: 'get',

@@ -7,6 +7,18 @@ import { PG_POOL, requirePool } from '../db/pg.module';
 export class CatalogService {
   constructor(@Inject(PG_POOL) private readonly pool: Pool | null) {}
 
+  /** GET /v1/products — sellable goods for checkout (server-priced). */
+  async listProducts(orgId: string): Promise<{ data: unknown }> {
+    const { rows } = await requirePool(this.pool).query(
+      `SELECT id, sku, name, category, unit, list_price_cents, status
+       FROM products
+       WHERE organization_id = $1 AND status = 'ACTIVE'
+       ORDER BY category NULLS LAST, sku`,
+      [orgId],
+    );
+    return { data: { items: rows, nextCursor: null } };
+  }
+
   /** GET /v1/service-variants — priced variants the frontdesk can book. */
   async listVariants(orgId: string): Promise<{ data: unknown }> {
     const { rows } = await requirePool(this.pool).query<{

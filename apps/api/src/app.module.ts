@@ -8,6 +8,7 @@ import { SchedulingModule } from './scheduling/scheduling.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { DevicesModule } from './devices/devices.module';
+import { OrdersModule } from './orders/orders.module';
 
 /**
  * Root application module (modular monolith — spec §2.1). One module per
@@ -26,6 +27,7 @@ import { DevicesModule } from './devices/devices.module';
     SessionsModule,
     CatalogModule,
     DevicesModule,
+    OrdersModule,
   ],
 })
 export class AppModule {}

@@ -82,6 +82,7 @@ Terminal states are terminal: no transitions out of PAID/REFUNDED/FAILED without
 `APPROVAL_REQUIRED`, `PROVIDER_VERIFICATION_FAILED`, `UNAUTHORIZED_SCOPE`,
 `VALIDATION_FAILED`, `NOT_FOUND`, `RATE_LIMITED`, `DEVICE_DISABLED`, `INTERNAL_ERROR`,
 `SERVICE_UNAVAILABLE` (0005 devices: `ROOM_BOUND_TO_OTHER_DEVICE` 409 — room already
-runs another ACTIVE device).
+runs another ACTIVE device; 0006 orders: `ORDER_HAS_ACTIVE_SERVICE` 422 — checkout
+blocked while a session on the visit is still running).
 Registry lives in `packages/contracts/src/errors.ts`; adding a code = adding a row there +
 doc entry, never ad-hoc strings.

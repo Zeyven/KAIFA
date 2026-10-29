@@ -5,3 +5,4 @@ export * from './room-state';
 export * from './technician-state';
 export * from './scheduling';
 export * from './session-state';
+export * from './order-state';

@@ -11,6 +11,7 @@ import {
 } from '@lanxu/domain';
 import { AuditService } from '../audit/audit.service';
 import { appendStoreEvent } from '../common/store-events';
+import { OrdersService } from '../orders/orders.service';
 import type { AuditActor } from '../common/http-context';
 import { PG_POOL, requirePool } from '../db/pg.module';
 
@@ -69,6 +70,7 @@ export class SessionsService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool | null,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(OrdersService) private readonly orders: OrdersService,
   ) {}
 
   private db(): Pool {
@@ -529,6 +531,12 @@ export class SessionsService {
         throw new ApiError('VALIDATION_FAILED', 'visitId or roomId is required.');
       }
 
+      // billing safety: every session-bearing visit always has a live order
+      await this.orders.hookEnsureOrderOnSessionCreate(client, {
+        storeId: ctx.storeId,
+        visitId: visitId!,
+      });
+
       const variant = await this.variantOf(client, orgId, input.serviceVariantId);
       let status: ServiceSessionState = 'DRAFT';
       let techState: TechnicianState | null = null;
@@ -751,7 +759,7 @@ export class SessionsService {
   private runLifecycle(
     ctx: SessionCommandContext,
     sessionId: string,
-    command: 'ACKNOWLEDGE' | 'ARRIVE' | 'START' | 'COMPLETE' | 'TERMINATE',
+    command: 'ACKNOWLEDGE' | 'ARRIVE' | 'START' | 'COMPLETE' | 'TERMINATE' | 'CANCEL',
     input: { expectedVersion?: number; reasonCode?: string },
   ): Promise<{ data: unknown }> {
     return this.tx(async (client) => {
@@ -810,6 +818,22 @@ export class SessionsService {
         });
       }
 
+      if (command === 'CANCEL' && row.technician_id) {
+        // booking cancelled while ASSIGNED → hand the technician back (§5.3)
+        const released = await this.releaseTechnician(
+          client,
+          ctx,
+          row.technician_id,
+          'SESSION_CANCELLED',
+          { sessionId },
+        );
+        payload.technicianState = released.status;
+        outbox.push({
+          type: 'technician.status_changed',
+          payload: { technicianId: row.technician_id, via: command, sessionId },
+        });
+      }
+
       if (command === 'START') {
         const now = new Date();
         const end = new Date(now.getTime() + row.duration_minutes * 60_000);
@@ -820,6 +844,7 @@ export class SessionsService {
         });
         payload.roomState = roomNext;
         outbox.push({ type: 'service.started', payload: { ...payload } });
+        await this.orders.hookMarkInService(client, ctx.storeId, row.visit_id);
       }
 
       if (command === 'COMPLETE' || command === 'TERMINATE') {
@@ -855,9 +880,22 @@ export class SessionsService {
           );
           payload.roomState = roomNext;
         }
-        if (command === 'COMPLETE')
+        if (command === 'COMPLETE') {
           outbox.push({ type: 'service.completed', payload: { ...payload } });
+          // billable snapshot: line item + totals + order.updated in this tx
+          await this.orders.hookAttachServiceItem(client, {
+            storeId: ctx.storeId,
+            visitId: row.visit_id,
+            sessionId,
+            session: {
+              price_cents: row.price_cents,
+              service_variant_id: row.service_variant_id,
+            },
+          });
+        }
       }
+
+      if (command === 'CANCEL') outbox.push({ type: 'service.cancelled', payload: { ...payload } });
 
       const version = await this.bumpSession(client, row, next, extra);
       await this.sessionEvent(client, sessionId, command, ctx, payload);
@@ -897,6 +935,14 @@ export class SessionsService {
 
   acknowledge(ctx: SessionCommandContext, sessionId: string, input: { expectedVersion?: number }) {
     return this.runLifecycle(ctx, sessionId, 'ACKNOWLEDGE', input);
+  }
+
+  cancel(
+    ctx: SessionCommandContext,
+    sessionId: string,
+    input: { expectedVersion?: number; reasonCode?: string },
+  ) {
+    return this.runLifecycle(ctx, sessionId, 'CANCEL', input);
   }
 
   arrive(ctx: SessionCommandContext, sessionId: string, input: { expectedVersion?: number }) {

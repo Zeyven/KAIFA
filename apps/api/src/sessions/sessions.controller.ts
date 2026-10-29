@@ -15,6 +15,10 @@ import { RequirePermissions } from '../common/decorators';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { SessionsService, type SessionCommandContext } from './sessions.service';
 
+const cancelBody = z.object({
+  expectedVersion: z.int().nonnegative().optional(),
+  reasonCode: z.string().max(60).optional(),
+});
 const versionFields = { expectedVersion: z.int().nonnegative().optional() };
 const emptyBody = z.object({ ...versionFields }).default({});
 
@@ -148,6 +152,15 @@ export class SessionsController {
     @Body(new ZodValidationPipe(emptyBody)) body: z.infer<typeof emptyBody>,
   ): Promise<{ data: unknown }> {
     return this.service.arrive(this.ctxOf(req), sessionId, body);
+  }
+
+  @Post(':sessionId/cancel')
+  cancel(
+    @Req() req: FastifyRequest,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Body(new ZodValidationPipe(cancelBody)) body: z.infer<typeof cancelBody>,
+  ): Promise<{ data: unknown }> {
+    return this.service.cancel(this.ctxOf(req), sessionId, body);
   }
 
   @Post(':sessionId/start')

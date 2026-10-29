@@ -41,6 +41,8 @@ export interface TenantFixture {
   /** Sample catalog (org-scoped) for skill checks. */
   serviceVariantId: string;
   serviceVariantId2: string;
+  productId: string;
+  productId2: string;
 }
 
 export async function seedTenant(
@@ -203,6 +205,17 @@ export async function seedTenant(
     );
     const byCode = new Map(rooms.rows.map((r) => [r.code, r.id]));
 
+    // products for the Order Engine (server-priced goods, §4.7 item_type=PRODUCT)
+    const productRows = await client.query<{ id: string; sku: string }>(
+      `INSERT INTO products (organization_id, sku, name, category, unit, list_price_cents)
+       VALUES ($1, 'SKU-TOWEL', '纯棉浴巾', 'Bath', '条', 9800),
+              ($1, 'SKU-DRINK', '矿泉水 330ml', 'Drinks', '瓶', 1500)
+       RETURNING id, sku`,
+      [orgId],
+    );
+    const productId = productRows.rows.find((r) => r.sku === 'SKU-TOWEL')!.id;
+    const productId2 = productRows.rows.find((r) => r.sku === 'SKU-DRINK')!.id;
+
     await client.query('COMMIT');
 
     return {
@@ -230,6 +243,8 @@ export async function seedTenant(
       tech4,
       serviceVariantId,
       serviceVariantId2,
+      productId,
+      productId2,
     };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
