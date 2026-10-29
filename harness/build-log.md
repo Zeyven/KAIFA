@@ -254,3 +254,18 @@ cross-store fetch → 404.
 
 - **#50 query-param booleans**: filter params arrive as strings (`activeOnly=1|true`) — normalized at the controller edge, never truthiness-tested raw.
 - **#51 clock-board position null math**: `position > 0` on `number | null` (TS18047) → explicit null narrowing; compensation test asserted inverted effective-key order → expectation corrected to (1000 < 1998).
+
+## 2026-10-29 · Phase 13 Split Payment (online adapter + mixed tender, spec §9.4/§13.2)
+
+| Step | What ran | Evidence | Result |
+|---|---|---|---|
+| #58 | adapters | `payments/provider.ts` — PaymentProvider interface + FakeOnlinePaymentProvider (no network; simulator QR payload) + HMAC-SHA256 webhook signature helpers (timing-safe compare); real wechat/alipay/aggregate honestly resolve to null → SERVICE_UNAVAILABLE (merchant credentials absent); PAYMENT_WEBHOOK_SECRET env with production rotation refine (fail-closed like JWT) | provider unit **3/3**; env fail-closed test added |
+| #59 | API | create() now opens online methods CASH-till-free → provider.createOrder SERVER-SIDE → PENDING + payment.updated; capture() rejects PENDING (server verify only); POST /payments/:id/verify (provider query, amount re-checked, idempotent replay); POST /payments/webhook @Public (HMAC signature = auth, amount re-checked, provider-txn uniqueness, idempotent replay); shared `settleCaptured()` = one tx for cashier/verify/webhook → order PAID + visit/room settle; **room.current_visit_id now NULLed on visit close** | payments.int **9/9** (split tender 300 CASH + 500 WECHAT verify + 700 ALIPAY webhook → PAID = Σ captured = payable; forged sig 403; wrong amount 422; duplicate callbacks replayed) |
+| #60 | gate | `npm run verify` | **EXIT 0**; unit **102/102** (17 files); integration **105/105** (12 files); openapi **61 paths**; build |
+
+### Root causes fixed during Phase 13
+
+- **#64 stale room linkage**: NOTHING cleared `rooms.current_visit_id` when a visit closed — first reopen after ORDER_PAID settlement hit ROOM_OCCUPIED with VACANT_CLEAN + CLOSED visit (Phase 12 settle updated state only). Fix: settle nulls the FK in the same tx; guard now consistent with visit lifecycle.
+- **#65 webhook SYSTEM actor**: `audit_logs.actor_id` is uuid — coercing missing actor to the string `'system'` threw 23514/22P02 mid-transaction. Fix: optional actorId ⇒ actor_type SYSTEM + NULL id (same pattern as settlement audit).
+- **#66 test isolation via shared orders**: retargeting the "online method" case between orders (orderA→orderC) — a stray PENDING payment on a shared order cascaded into 3 downstream failures (payments-per-order count, missing order.paid event, no CAPTURED rows). Lesson: each guard case pays only its own order.
+- edit-discipline (×3): multi-assert python patches abort with ZERO writes when ANY anchor mismatches — split into per-phase scripts that write immediately after their own asserts; always `sed -n` the current region first.

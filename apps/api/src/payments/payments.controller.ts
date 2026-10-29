@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Inject,
   Param,
   ParseUUIDPipe,
@@ -12,7 +14,7 @@ import {
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ApiError } from '@lanxu/contracts';
-import { RequirePermissions } from '../common/decorators';
+import { Public, RequirePermissions } from '../common/decorators';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { PaymentsService } from './payments.service';
 
@@ -24,6 +26,14 @@ const paymentBody = z.object({
 });
 const cashOpenBody = z.object({ openingFloatCents: z.int().nonnegative().optional() }).default({});
 const cashCloseBody = z.object({ countedCashCents: z.int().nonnegative() });
+/** §13.2 provider callback — public by design; the HMAC signature is the auth. */
+const webhookBody = z.object({
+  provider: z.string().min(1).max(32),
+  providerOrderId: z.string().min(1).max(255),
+  providerTransactionId: z.string().min(1).max(255),
+  amountCents: z.int().positive(),
+  signature: z.string().min(1).max(255),
+});
 
 @Controller('v1')
 export class PaymentsController {
@@ -62,6 +72,34 @@ export class PaymentsController {
     const p = req.principal;
     if (!p || !req.actorEmployeeId) throw new Error('auth context missing');
     return this.service.capture(paymentId, {
+      storeId: req.authStoreId!,
+      actorId: req.actorEmployeeId,
+      ip: req.ip,
+    });
+  }
+
+  /** Signed provider callback — HMAC verified in the service (public route). */
+  @Public()
+  @Post('payments/webhook')
+  @HttpCode(HttpStatus.OK)
+  webhook(
+    @Body(new ZodValidationPipe(webhookBody)) body: z.infer<typeof webhookBody>,
+    @Req() req: FastifyRequest,
+  ): Promise<{ data: unknown }> {
+    return this.service.webhook(body, { ip: req.ip });
+  }
+
+  /** §13.2 server-side provider query → CAPTURED (client claims never count). */
+  @RequirePermissions('order.checkout')
+  @Post('payments/:paymentId/verify')
+  @HttpCode(201)
+  verify(
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Req() req: FastifyRequest,
+  ): Promise<{ data: unknown }> {
+    const p = req.principal;
+    if (!p || !req.actorEmployeeId) throw new Error('auth context missing');
+    return this.service.verify(paymentId, {
       storeId: req.authStoreId!,
       actorId: req.actorEmployeeId,
       ip: req.ip,

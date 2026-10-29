@@ -497,6 +497,32 @@ const OPS: Array<{ path: string } & OpSpec> = [
     errors: [404],
   },
   {
+    path: '/v1/payments/{paymentId}/verify',
+    method: 'post',
+    opId: 'verifyPayment',
+    summary: 'Server-side provider query → CAPTURED (client claims never count, §13.2); idempotent',
+    params: ['paymentId'],
+    body: z.object({}),
+    successBody: dataObj(),
+    errors: [404, 422],
+  },
+  {
+    path: '/v1/payments/webhook',
+    method: 'post',
+    opId: 'paymentWebhook',
+    summary:
+      'HMAC-signed provider callback (public; signature = auth) — amount re-verified server-side, replay idempotent',
+    body: z.object({
+      provider: z.string(),
+      providerOrderId: z.string(),
+      providerTransactionId: z.string(),
+      amountCents: z.int().positive(),
+      signature: z.string(),
+    }),
+    successBody: dataObj(),
+    errors: [403, 404, 422],
+  },
+  {
     path: '/v1/payments/{paymentId}/capture',
     method: 'post',
     opId: 'capturePayment',

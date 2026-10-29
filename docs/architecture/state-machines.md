@@ -73,7 +73,10 @@ Refund:     REQUESTED → APPROVED → PROCESSING → COMPLETED | FAILED
 ```
 
 Cash shortcut: `CREATED →(cashier confirm)→ CAPTURED` (records `cash_session_id`).
-Terminal states are terminal: no transitions out of PAID/REFUNDED/FAILED without new rows.
+Online path (§13.2): create → provider order **server-side** → `PENDING`; CAPTURED only via
+`POST /payments/:id/verify` (server provider query) or the HMAC-signed `POST /payments/webhook`
+(both re-verify the amount server-side; idempotent on replay; cashier confirm on a PENDING row
+is rejected). Terminal states are terminal: no transitions out of PAID/REFUNDED/FAILED without new rows.
 
 ## Error codes (initial registry — clients branch on these only)
 

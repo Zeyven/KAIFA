@@ -13,6 +13,13 @@ import { appendStoreEvent } from '../common/store-events';
 import { canTransition as canTransitionRoom } from '@lanxu/domain';
 import { PG_POOL, requirePool } from '../db/pg.module';
 import { OrdersService, type OrderRow } from '../orders/orders.service';
+import { ENV, type AppEnv } from '../env/env.module';
+import {
+  resolveProvider,
+  verifyWebhookSignature,
+  webhookSignature,
+  type PaymentProvider,
+} from './provider';
 
 /**
  * Cash payment + till reconciliation (spec §13.1, §4.7 payments, §20 #3/#4/#7):
@@ -25,11 +32,28 @@ import { OrdersService, type OrderRow } from '../orders/orders.service';
 
 @Injectable()
 export class PaymentsService {
+  private readonly provider: PaymentProvider | null;
+  private readonly webhookSecret: string;
+
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool | null,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(OrdersService) private readonly orders: OrdersService,
-  ) {}
+    @Inject(ENV) env: AppEnv,
+  ) {
+    this.provider = resolveProvider(env.PAYMENT_PROVIDER);
+    this.webhookSecret = env.PAYMENT_WEBHOOK_SECRET;
+  }
+
+  private requireProvider(): PaymentProvider {
+    if (!this.provider) {
+      throw new ApiError(
+        'SERVICE_UNAVAILABLE',
+        'configured payment provider has no adapter in this environment (real merchant credentials required)',
+      );
+    }
+    return this.provider;
+  }
 
   private db(): Pool {
     return requirePool(this.pool);
@@ -57,13 +81,6 @@ export class PaymentsService {
     idempotencyKey: string,
     ctx: { storeId: string; actorId: string; ip: string },
   ): Promise<{ data: unknown }> {
-    if (!isCashMethod(input.method)) {
-      // online adapters (WECHAT/ALIPAY/…) arrive with Phase 13 — fail closed
-      throw new ApiError(
-        'VALIDATION_FAILED',
-        `method ${input.method} is not enabled yet (Phase 13 online adapter); CASH only`,
-      );
-    }
     if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0) {
       throw new ApiError('VALIDATION_FAILED', 'amountCents must be a positive integer');
     }
@@ -98,27 +115,32 @@ export class PaymentsService {
         );
       }
 
-      // attach an OPEN till (auto-pick or explicit); required for 对账
-      let cashSessionId = input.cashSessionId ?? null;
-      if (cashSessionId) {
-        const { rows } = await client.query<{ id: string }>(
-          `SELECT id FROM cash_sessions WHERE id = $1 AND store_id = $2 AND status = 'OPEN'`,
-          [cashSessionId, ctx.storeId],
-        );
-        if (!rows[0]) throw new MachineError('CASH_SESSION_REQUIRED', 'cash session not open', 422);
-      } else {
-        const { rows } = await client.query<{ id: string }>(
-          `SELECT id FROM cash_sessions WHERE store_id = $1 AND status = 'OPEN'
-           ORDER BY opened_at DESC LIMIT 1`,
-          [ctx.storeId],
-        );
-        cashSessionId = rows[0]?.id ?? null;
-        if (!cashSessionId) {
-          throw new MachineError(
-            'CASH_SESSION_REQUIRED',
-            'open a cash session before taking money',
-            422,
+      // attach an OPEN till — CASH only; online money never touches the drawer
+      // (split tender, spec §9.4/§13)
+      let cashSessionId: string | null = null;
+      if (isCashMethod(input.method)) {
+        if (input.cashSessionId) {
+          const { rows } = await client.query<{ id: string }>(
+            `SELECT id FROM cash_sessions WHERE id = $1 AND store_id = $2 AND status = 'OPEN'`,
+            [input.cashSessionId, ctx.storeId],
           );
+          if (!rows[0])
+            throw new MachineError('CASH_SESSION_REQUIRED', 'cash session not open', 422);
+          cashSessionId = rows[0].id;
+        } else {
+          const { rows } = await client.query<{ id: string }>(
+            `SELECT id FROM cash_sessions WHERE store_id = $1 AND status = 'OPEN'
+             ORDER BY opened_at DESC LIMIT 1`,
+            [ctx.storeId],
+          );
+          cashSessionId = rows[0]?.id ?? null;
+          if (!cashSessionId) {
+            throw new MachineError(
+              'CASH_SESSION_REQUIRED',
+              'open a cash session before taking money',
+              422,
+            );
+          }
         }
       }
 
@@ -140,6 +162,39 @@ export class PaymentsService {
 
       if (inserted.rows[0]) {
         const payment = inserted.rows[0];
+        let providerPayload: Record<string, unknown> | null = null;
+        let status = payment.status;
+        if (!isCashMethod(input.method)) {
+          // §13.2: provider order created SERVER-SIDE → PENDING; CAPTURED only
+          // via server verify / signed webhook (client claims never advance state)
+          const provider = this.requireProvider();
+          const created = await provider.createOrder({
+            paymentId: payment.id,
+            orderId: payment.order_id,
+            amountCents: input.amountCents,
+            method: input.method,
+          });
+          await client.query(
+            `UPDATE payments SET status = 'PENDING', provider = $2, provider_order_id = $3,
+                    updated_at = now()
+             WHERE id = $1`,
+            [payment.id, provider.name, created.providerOrderId],
+          );
+          status = 'PENDING';
+          providerPayload = created.displayPayload;
+          await appendStoreEvent(client, {
+            storeId: ctx.storeId,
+            type: 'payment.updated',
+            aggregateType: 'payment',
+            aggregateId: payment.id,
+            version: 1,
+            payload: {
+              status: 'PENDING',
+              amountCents: input.amountCents,
+              orderId: payment.order_id,
+            },
+          });
+        }
         await this.audit.record(client, {
           organizationId: undefined,
           storeId: ctx.storeId,
@@ -153,9 +208,10 @@ export class PaymentsService {
             amountCents: Number(payment.amount_cents),
             cashSessionId,
             idempotencyKey,
+            status,
           },
         });
-        return { data: { ...payment, replayed: false } };
+        return { data: { ...payment, status, replayed: false, providerPayload } };
       }
 
       // replay: same key — identical request returns the original result (§20 #4)
@@ -209,6 +265,13 @@ export class PaymentsService {
       const payment = payRes.rows[0];
       if (!payment) throw new ApiError('NOT_FOUND', 'payment not found');
       if (payment.status === 'CAPTURED') return { data: { ...payment, replayed: true } };
+      if (payment.status === 'PENDING') {
+        throw new MachineError(
+          'INVALID_STATE_TRANSITION',
+          'online payment must be verified (server query / signed webhook), never cashier-captured',
+          422,
+        );
+      }
       assertPaymentTransition(payment.status as never, 'CAPTURED');
 
       if (isCashMethod(payment.method)) {
@@ -224,101 +287,268 @@ export class PaymentsService {
         }
       }
 
-      const orderRes = await client.query<{
-        id: string;
-        status: string;
-        payable_cents: string;
-        paid_cents: string;
-        version: number;
-        store_id: string;
-      }>(
-        `SELECT id, status, payable_cents, paid_cents, version, store_id
-         FROM orders WHERE id = $1 FOR UPDATE`,
-        [payment.order_id],
+      return this.settleCaptured(client, payment, ctx, 'CASH_CONFIRM');
+    });
+  }
+
+  /**
+   * THE settlement step (shared by cashier confirm, provider verify and the
+   * signed webhook): order lock → due re-check → payment CAPTURED + order
+   * paid/status + payment.updated/order.paid + visit/room settle + audit —
+   * all in the caller's transaction. `ctx.actorId` null ⇒ SYSTEM actor.
+   */
+  private async settleCaptured(
+    client: PoolClient,
+    payment: { id: string; order_id: string; amount_cents: string; status: string },
+    ctx: { storeId: string; actorId?: string | null; ip: string },
+    via: 'CASH_CONFIRM' | 'PROVIDER_VERIFY' | 'WEBHOOK',
+  ): Promise<{ data: unknown }> {
+    const orderRes = await client.query<{
+      id: string;
+      status: string;
+      payable_cents: string;
+      paid_cents: string;
+      version: number;
+      store_id: string;
+    }>(
+      `SELECT id, status, payable_cents, paid_cents, version, store_id
+       FROM orders WHERE id = $1 FOR UPDATE`,
+      [payment.order_id],
+    );
+    const order = orderRes.rows[0];
+    if (!order) throw new ApiError('NOT_FOUND', 'payment order missing');
+    const os = order.status as OrderState;
+    if (os !== 'PENDING_CHECKOUT' && os !== 'PARTIALLY_PAID') {
+      throw new MachineError(
+        'INVALID_STATE_TRANSITION',
+        `order ${os} is not awaiting payment`,
+        422,
       );
-      const order = orderRes.rows[0];
-      if (!order) throw new ApiError('NOT_FOUND', 'payment order missing');
-      const os = order.status as OrderState;
-      if (os !== 'PENDING_CHECKOUT' && os !== 'PARTIALLY_PAID') {
-        throw new MachineError(
-          'INVALID_STATE_TRANSITION',
-          `order ${os} is not awaiting payment`,
-          422,
-        );
-      }
-      const amount = Number(payment.amount_cents);
-      const due = Number(order.payable_cents) - Number(order.paid_cents);
-      if (amount > due) {
-        throw new MachineError(
-          'PAYMENT_EXCEEDS_DUE',
-          `payment ${amount} exceeds remaining due ${due}`,
-          422,
-        );
-      }
-
-      const newPaid = Number(order.paid_cents) + amount;
-      const newStatus: OrderState =
-        newPaid >= Number(order.payable_cents) ? 'PAID' : 'PARTIALLY_PAID';
-      if (newStatus !== os) assertOrderTransition(os, newStatus);
-
-      const payUpdated = await client.query<{ id: string; status: string; captured_at: string }>(
-        `UPDATE payments SET status = 'CAPTURED', captured_at = now(), updated_at = now()
-         WHERE id = $1 RETURNING id, status, captured_at`,
-        [paymentId],
+    }
+    const amount = Number(payment.amount_cents);
+    const due = Number(order.payable_cents) - Number(order.paid_cents);
+    if (amount > due) {
+      throw new MachineError(
+        'PAYMENT_EXCEEDS_DUE',
+        `payment ${amount} exceeds remaining due ${due}`,
+        422,
       );
-      const ordUpdated = await client.query<OrderRow>(
-        `UPDATE orders SET paid_cents = $2, status = $3, version = version + 1, updated_at = now()
-         WHERE id = $1 RETURNING *`,
-        [order.id, newPaid, newStatus],
-      );
-      const bumped = ordUpdated.rows[0]!;
+    }
 
-      await this.audit.record(client, {
-        storeId: ctx.storeId,
-        actor: { actorType: 'EMPLOYEE', actorId: ctx.actorId, ip: ctx.ip },
-        action: 'payment.captured',
-        resourceType: 'payment',
-        resourceId: paymentId,
-        before: { status: payment.status, orderStatus: os },
-        after: { status: 'CAPTURED', orderStatus: newStatus, paidCents: newPaid },
-      });
+    const newPaid = Number(order.paid_cents) + amount;
+    const newStatus: OrderState =
+      newPaid >= Number(order.payable_cents) ? 'PAID' : 'PARTIALLY_PAID';
+    if (newStatus !== os) assertOrderTransition(os, newStatus);
 
+    const payUpdated = await client.query<{ id: string; status: string; captured_at: string }>(
+      `UPDATE payments SET status = 'CAPTURED', captured_at = now(), updated_at = now()
+       WHERE id = $1 RETURNING id, status, captured_at`,
+      [payment.id],
+    );
+    const ordUpdated = await client.query<OrderRow>(
+      `UPDATE orders SET paid_cents = $2, status = $3, version = version + 1, updated_at = now()
+       WHERE id = $1 RETURNING *`,
+      [order.id, newPaid, newStatus],
+    );
+    const bumped = ordUpdated.rows[0]!;
+
+    await this.audit.record(client, {
+      storeId: ctx.storeId,
+      actor: {
+        actorType: ctx.actorId ? 'EMPLOYEE' : 'SYSTEM',
+        actorId: ctx.actorId ?? undefined,
+        ip: ctx.ip,
+      },
+      action: 'payment.captured',
+      resourceType: 'payment',
+      resourceId: payment.id,
+      before: { status: payment.status, orderStatus: os },
+      after: { status: 'CAPTURED', orderStatus: newStatus, paidCents: newPaid, via },
+    });
+
+    await appendStoreEvent(client, {
+      storeId: ctx.storeId,
+      type: 'payment.updated',
+      aggregateType: 'payment',
+      aggregateId: payment.id,
+      version: 2,
+      payload: { status: 'CAPTURED', amountCents: amount, orderId: order.id, via },
+    });
+    if (newStatus === 'PAID') {
       await appendStoreEvent(client, {
         storeId: ctx.storeId,
-        type: 'payment.updated',
-        aggregateType: 'payment',
-        aggregateId: paymentId,
-        version: 2,
-        payload: { status: 'CAPTURED', amountCents: amount, orderId: order.id },
-      });
-      if (newStatus === 'PAID') {
-        await appendStoreEvent(client, {
-          storeId: ctx.storeId,
-          type: 'order.paid',
-          aggregateType: 'order',
-          aggregateId: order.id,
-          version: bumped.version,
-          payload: {
-            paidCents: newPaid,
-            payableCents: Number(bumped.payable_cents),
-            storeSeq: null,
-          },
-        });
-        await this.settleVisitAndRoom(client, bumped, ctx);
-      } else {
-        await this.orders.emitOrderUpdated(client, bumped, 'payment_captured');
-      }
-
-      return {
-        data: {
-          id: paymentId,
-          status: payUpdated.rows[0]!.status,
-          capturedAt: payUpdated.rows[0]!.captured_at,
-          order: bumped,
-          replayed: false,
+        type: 'order.paid',
+        aggregateType: 'order',
+        aggregateId: order.id,
+        version: bumped.version,
+        payload: {
+          paidCents: newPaid,
+          payableCents: Number(bumped.payable_cents),
+          storeSeq: null,
         },
-      };
+      });
+      await this.settleVisitAndRoom(client, bumped, ctx);
+    } else {
+      await this.orders.emitOrderUpdated(client, bumped, 'payment_captured');
+    }
+
+    return {
+      data: {
+        id: payment.id,
+        status: payUpdated.rows[0]!.status,
+        capturedAt: payUpdated.rows[0]!.captured_at,
+        order: bumped,
+        replayed: false,
+        via,
+      },
+    };
+  }
+
+  // ── POST /v1/payments/:id/verify — server-side provider query (§13.2) ──
+
+  async verify(
+    paymentId: string,
+    ctx: { storeId: string; actorId: string; ip: string },
+  ): Promise<{ data: unknown }> {
+    return this.tx(async (client) => {
+      const payRes = await client.query<{
+        id: string;
+        order_id: string;
+        method: string;
+        amount_cents: string;
+        status: string;
+        provider_order_id: string | null;
+      }>(
+        `SELECT id, order_id, method, amount_cents, status, provider_order_id
+         FROM payments WHERE id = $1 AND store_id = $2 FOR UPDATE`,
+        [paymentId, ctx.storeId],
+      );
+      const payment = payRes.rows[0];
+      if (!payment) throw new ApiError('NOT_FOUND', 'payment not found');
+      if (payment.status === 'CAPTURED') return { data: { ...payment, replayed: true } };
+      if (payment.status !== 'PENDING' || !payment.provider_order_id) {
+        throw new MachineError(
+          'INVALID_STATE_TRANSITION',
+          `payment ${payment.status} cannot be verified (only PENDING online payments)`,
+          422,
+        );
+      }
+      const provider = this.requireProvider();
+      const result = await provider.verify({
+        providerOrderId: payment.provider_order_id,
+        paymentId: payment.id,
+        expectedAmountCents: Number(payment.amount_cents),
+      });
+      // §13.2 server verifies amount — provider echo must match our row
+      if (result.verifiedAmountCents !== Number(payment.amount_cents)) {
+        await this.audit.security({
+          eventType: 'PROVIDER_AMOUNT_MISMATCH',
+          storeId: ctx.storeId,
+          actorHint: payment.provider_order_id,
+          ip: ctx.ip,
+        });
+        throw new ApiError(
+          'PROVIDER_VERIFICATION_FAILED',
+          'provider-verified amount does not match the payment',
+        );
+      }
+      await client.query(
+        `UPDATE payments SET provider_transaction_id = $2, updated_at = now()
+         WHERE id = $1 AND provider_transaction_id IS NULL`,
+        [payment.id, result.providerTransactionId],
+      );
+      return this.settleCaptured(client, { ...payment, status: 'PENDING' }, ctx, 'PROVIDER_VERIFY');
     });
+  }
+
+  // ── POST /v1/payments/webhook — signed provider callback (§13.2) ─────
+
+  async webhook(
+    input: {
+      provider: string;
+      providerOrderId: string;
+      providerTransactionId: string;
+      amountCents: number;
+      signature: string;
+    },
+    ctx: { ip: string },
+  ): Promise<{ data: unknown }> {
+    const ok = verifyWebhookSignature(this.webhookSecret, {
+      providerOrderId: input.providerOrderId,
+      providerTransactionId: input.providerTransactionId,
+      amountCents: input.amountCents,
+      signature: input.signature,
+    });
+    if (!ok) {
+      throw new ApiError('FORBIDDEN', 'webhook signature verification failed');
+    }
+    return this.tx(async (client) => {
+      const payRes = await client.query<{
+        id: string;
+        store_id: string;
+        order_id: string;
+        amount_cents: string;
+        status: string;
+        method: string;
+      }>(
+        `SELECT id, store_id, order_id, amount_cents, status, method
+         FROM payments WHERE provider_order_id = $1`,
+        [input.providerOrderId],
+      );
+      const payment = payRes.rows[0];
+      if (!payment) throw new ApiError('NOT_FOUND', 'unknown provider order');
+      if (payment.status === 'CAPTURED') {
+        return { data: { id: payment.id, status: 'CAPTURED', replayed: true } }; // idempotent callback
+      }
+      if (payment.status !== 'PENDING') {
+        throw new MachineError(
+          'INVALID_STATE_TRANSITION',
+          `payment ${payment.status} cannot accept a callback`,
+          422,
+        );
+      }
+      if (Number(payment.amount_cents) !== input.amountCents) {
+        await this.audit.security({
+          eventType: 'WEBHOOK_AMOUNT_MISMATCH',
+          storeId: payment.store_id,
+          actorHint: input.providerTransactionId,
+          ip: ctx.ip,
+        });
+        throw new ApiError(
+          'PROVIDER_VERIFICATION_FAILED',
+          'callback amount does not match the payment',
+        );
+      }
+      // enforce unique provider txn BEFORE settle (§20 #3 — dedupe at source)
+      const { rows: dup } = await client.query<{ id: string }>(
+        `SELECT id FROM payments
+         WHERE provider = $2 AND provider_transaction_id = $3 AND id <> $1`,
+        [payment.id, input.provider, input.providerTransactionId],
+      );
+      if (dup[0]) {
+        throw new ApiError('IDEMPOTENCY_CONFLICT', 'provider transaction already used');
+      }
+      await client.query(
+        `UPDATE payments SET provider_transaction_id = $2, updated_at = now()
+         WHERE id = $1`,
+        [payment.id, input.providerTransactionId],
+      );
+      return this.settleCaptured(
+        client,
+        { ...payment, status: 'PENDING' },
+        { storeId: payment.store_id, actorId: null, ip: ctx.ip },
+        'WEBHOOK',
+      );
+    });
+  }
+
+  /** Canonical signature helper (controller exposes the algorithm shape). */
+  webhookSignatureFor(parts: {
+    providerOrderId: string;
+    providerTransactionId: string;
+    amountCents: number;
+  }): string {
+    return webhookSignature(this.webhookSecret, parts);
   }
 
   // ── GET /v1/payments/:id ─────────────────────────────────────────────
@@ -344,7 +574,7 @@ export class PaymentsService {
   private async settleVisitAndRoom(
     client: PoolClient,
     order: OrderRow,
-    ctx: { storeId: string; actorId: string; ip: string },
+    ctx: { storeId: string; actorId?: string | null; ip: string },
   ): Promise<void> {
     const visitRes = await client.query<{ id: string; room_id: string }>(
       `UPDATE visits SET status = 'CLOSED', closed_at = now()
@@ -365,7 +595,11 @@ export class PaymentsService {
     });
     await this.audit.record(client, {
       storeId: ctx.storeId,
-      actor: { actorType: 'EMPLOYEE', actorId: ctx.actorId, ip: ctx.ip },
+      actor: {
+        actorType: ctx.actorId ? 'EMPLOYEE' : 'SYSTEM',
+        actorId: ctx.actorId ?? undefined,
+        ip: ctx.ip,
+      },
       action: 'visit.closed',
       resourceType: 'visit',
       resourceId: visit.id,
@@ -386,7 +620,8 @@ export class PaymentsService {
     );
     if (!applied.ok) return; // already vacated/cleaned by another path
     await client.query(
-      `UPDATE rooms SET operational_state = $2, version = version + 1, updated_at = now()
+      `UPDATE rooms SET operational_state = $2, current_visit_id = NULL,
+              version = version + 1, updated_at = now()
        WHERE id = $1`,
       [visit.room_id, applied.next],
     );

@@ -24,7 +24,10 @@ export const envSchema = z
     JWT_SECRET: z.string().min(32).default('dev-only-insecure-jwt-secret-change-me-0000000000'),
     JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(3600),
     PAYMENT_PROVIDER: z.enum(['fake', 'wechat', 'alipay', 'aggregate']).default('fake'),
-    // BUSINESS POLICY — REQUIRES PILOT VALIDATION: discounts above this many
+    // Fake-provider webhook HMAC secret (§13.2). PREVIEW/TEST default only —
+    // production refine below forces rotation like JWT_SECRET.
+    PAYMENT_WEBHOOK_SECRET: z.string().min(16).default('preview-fake-webhook-secret-2026'),
+
     // cents must go through approval (spec §11 △ / §21 thresholds unknown).
     DISCOUNT_APPROVAL_THRESHOLD_CENTS: z.coerce.number().int().min(0).default(10_000),
   })
@@ -41,7 +44,16 @@ export const envSchema = z
   .refine((env) => env.NODE_ENV !== 'production' || env.PAYMENT_PROVIDER !== 'fake', {
     message: 'PAYMENT_PROVIDER=fake is forbidden in production (fail closed, spec §13.2)',
     path: ['PAYMENT_PROVIDER'],
-  });
+  })
+  .refine(
+    (env) =>
+      env.NODE_ENV !== 'production' ||
+      env.PAYMENT_WEBHOOK_SECRET !== 'preview-fake-webhook-secret-2026',
+    {
+      message: 'PAYMENT_WEBHOOK_SECRET must be rotated away from the preview default in production',
+      path: ['PAYMENT_WEBHOOK_SECRET'],
+    },
+  );
 
 export type AppEnv = z.infer<typeof envSchema>;
 
@@ -64,6 +76,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     JWT_ACCESS_TTL_SECONDS: source.JWT_ACCESS_TTL_SECONDS,
     PAYMENT_PROVIDER: source.PAYMENT_PROVIDER,
     DISCOUNT_APPROVAL_THRESHOLD_CENTS: source.DISCOUNT_APPROVAL_THRESHOLD_CENTS,
+    PAYMENT_WEBHOOK_SECRET: source.PAYMENT_WEBHOOK_SECRET,
   };
   const result = envSchema.safeParse(candidate);
   if (!result.success) {

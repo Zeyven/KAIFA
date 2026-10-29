@@ -23,7 +23,7 @@ gates executed with recorded evidence) · `BLOCKED` (external dependency — nam
 | 10 | Android Room Core | BLOCKED | kiosk UI flows — no JDK/SDK/Maven Central/Google CDN in env (probe in harness/phases/10) |
 | 11 | Order Engine | DONE | order/items/pricing/discount/checkout snapshot; 金额与快照 verified |
 | 12 | Cash Payment | DONE | cash sessions + reconciliation exact; PAID settles visit/room |
-| 13 | Split Payment | TODO | multi-payment allocations |
+| 13 | Split Payment | DONE | multi-payment allocations (payments rows) | mixed CASH+online tender; server-verified CAPTURED |
 | 14 | Customer / Member | TODO | lookup/privacy (hash+encrypt phone) |
 | 15 | Wallet Ledger | TODO | principal/bonus append-only ledger, concurrency |
 | 16 | Refund | TODO | approval + provider refund + reversal + audit |

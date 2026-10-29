@@ -44,12 +44,24 @@ describe('loadEnv', () => {
     ).toThrow(EnvError);
   });
 
+  it('fails closed: production + preview webhook secret is rejected (§13.2)', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        NODE_ENV: 'production',
+        JWT_SECRET: 'rotated-'.repeat(6),
+        PAYMENT_PROVIDER: 'wechat',
+      }),
+    ).toThrow(EnvError);
+  });
+
   it('production passes with rotated secret and real provider', () => {
     const env = loadEnv({
       ...base,
       NODE_ENV: 'production',
       JWT_SECRET: 'rotated-'.repeat(6),
       PAYMENT_PROVIDER: 'wechat',
+      PAYMENT_WEBHOOK_SECRET: 'rotated-webhook-'.repeat(3),
     });
     expect(env.NODE_ENV).toBe('production');
   });
