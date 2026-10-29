@@ -26,6 +26,7 @@ const LEGAL: Array<[RoomOperationalState, RoomCommand, RoomOperationalState]> = 
   ['DISABLED', 'ENABLE', 'VACANT_CLEAN'],
   // spec §7.3 move endpoint; §5.1 table lacks these edges → documented gap-fill
   ['OCCUPIED_WAITING_SERVICE', 'VISIT_MOVED', 'DIRTY'],
+  ['OCCUPIED_WAITING_SERVICE', 'ORDER_PAID', 'DIRTY'], // goods-only bill settled
   ['RESERVED', 'VISIT_MOVED', 'VACANT_CLEAN'],
 ];
 

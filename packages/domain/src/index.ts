@@ -6,3 +6,4 @@ export * from './technician-state';
 export * from './scheduling';
 export * from './session-state';
 export * from './order-state';
+export * from './payment-state';

@@ -9,6 +9,7 @@ import { SessionsModule } from './sessions/sessions.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { DevicesModule } from './devices/devices.module';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 
 /**
  * Root application module (modular monolith — spec §2.1). One module per
@@ -28,6 +29,7 @@ import { OrdersModule } from './orders/orders.module';
     CatalogModule,
     DevicesModule,
     OrdersModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}

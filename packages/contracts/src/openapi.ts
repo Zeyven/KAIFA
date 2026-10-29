@@ -468,6 +468,71 @@ const OPS: Array<{ path: string } & OpSpec> = [
     successBody: dataObj(),
     errors: [404, 409, 422],
   },
+  // ── payments / cash sessions (Phase 12) ──
+  {
+    path: '/v1/payments',
+    method: 'post',
+    opId: 'createPayment',
+    summary:
+      'Create payment (CASH only until Phase 13) — Idempotency-Key REQUIRED; attaches OPEN till',
+    body: z.object({
+      orderId: uuid,
+      method: z.enum(['CASH', 'WECHAT', 'ALIPAY', 'WALLET', 'CARD', 'OTHER']),
+      amountCents: z.int().positive(),
+      cashSessionId: uuid.optional(),
+    }),
+    successBody: dataObj(
+      { id: { type: 'string' }, status: { type: 'string' }, replayed: { type: 'boolean' } },
+      ['id'],
+    ),
+    errors: [400, 404, 422],
+  },
+  {
+    path: '/v1/payments/{paymentId}',
+    method: 'get',
+    opId: 'getPayment',
+    summary: 'Payment detail (store-scoped)',
+    params: ['paymentId'],
+    successBody: dataObj(),
+    errors: [404],
+  },
+  {
+    path: '/v1/payments/{paymentId}/capture',
+    method: 'post',
+    opId: 'capturePayment',
+    summary:
+      'Cashier confirm → CAPTURED + order paid/status/visit close/room ORDER_PAID in one tx; idempotent',
+    params: ['paymentId'],
+    body: z.object({}),
+    successBody: dataObj(),
+    errors: [404, 422],
+  },
+  {
+    path: '/v1/cash-sessions',
+    method: 'post',
+    opId: 'openCashSession',
+    summary: 'Find-or-open the store till (one OPEN per store; order.checkout)',
+    body: z.object({ openingFloatCents: z.int().nonnegative().optional() }),
+    successBody: dataObj({ id: { type: 'string' }, status: { type: 'string' } }, ['id']),
+  },
+  {
+    path: '/v1/cash-sessions',
+    method: 'get',
+    opId: 'listCashSessions',
+    summary: 'Till history with close snapshots/variance (order.read)',
+    successBody: dataItems({ type: 'object' }),
+  },
+  {
+    path: '/v1/cash-sessions/{cashSessionId}/close',
+    method: 'post',
+    opId: 'closeCashSession',
+    summary:
+      '交班对账: expected = float + captured cash; records counted + variance (append-only audit)',
+    params: ['cashSessionId'],
+    body: z.object({ countedCashCents: z.int().nonnegative() }),
+    successBody: dataObj({ variance_cents: { type: 'integer' } }),
+    errors: [404, 422],
+  },
   // ── catalog ──
   {
     path: '/v1/products',

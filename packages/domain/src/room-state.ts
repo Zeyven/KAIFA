@@ -77,6 +77,10 @@ const TABLE: Partial<
   OCCUPIED_WAITING_SERVICE: {
     SERVICE_STARTED: 'IN_SERVICE',
     VISIT_MOVED: 'DIRTY', // spec gap-fill: vacated room must be cleaned (BUSINESS POLICY)
+    // goods-only visits (no session ever ran) — paid bill vacates like any
+    // completed visit. BUSINESS POLICY — REQUIRES PILOT VALIDATION (spec §5.1
+    // only tabulates ORDER_PAID from WAITING_CHECKOUT).
+    ORDER_PAID: 'DIRTY',
     MAINTENANCE_START: 'MAINTENANCE', // occupied-family must not — rejected by guard below
   },
   IN_SERVICE: {
