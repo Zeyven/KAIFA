@@ -415,6 +415,71 @@ export class SessionsService {
     return applied.next;
   }
 
+  /**
+   * GET /v1/service-sessions — additive store-scoped read (spec §7.3 lists
+   * per-id GET only; the FrontDesk board needs store aggregates). `today`
+   * aligns to the VISIT business_date (same cutoff math as visit open).
+   */
+  async list(
+    storeId: string,
+    q: {
+      technicianId?: string;
+      roomId?: string;
+      status?: string;
+      activeOnly?: boolean;
+      today?: boolean;
+      limit?: number;
+    },
+  ): Promise<{ data: unknown }> {
+    const conds: string[] = ['s.store_id = $1'];
+    const params: unknown[] = [storeId];
+    let i = 2;
+    if (q.technicianId) {
+      conds.push(`s.technician_id = $${i}`);
+      params.push(q.technicianId);
+      i += 1;
+    }
+    if (q.roomId) {
+      conds.push(`s.room_id = $${i}`);
+      params.push(q.roomId);
+      i += 1;
+    }
+    if (q.status) {
+      conds.push(`s.status = $${i}`);
+      params.push(q.status);
+      i += 1;
+    }
+    if (q.activeOnly) {
+      // not-terminal states (mirrors isActiveSessionState in domain)
+      conds.push(
+        `s.status IN ('DRAFT','ASSIGNED','ACKNOWLEDGED','ARRIVED','STARTED','ENDING_SOON')`,
+      );
+    }
+    if (q.today) {
+      conds.push(
+        `v.business_date = ((now() AT TIME ZONE st.timezone)::date
+           - CASE WHEN (now() AT TIME ZONE st.timezone)::time < st.business_date_cutoff_time
+                  THEN 1 ELSE 0 END)`,
+      );
+    }
+    params.push(Math.min(Math.max(q.limit ?? 100, 1), 500));
+    const { rows } = await this.db().query<SessionRow & { created_at: string }>(
+      `SELECT s.id, s.store_id, s.visit_id, s.room_id, s.service_variant_id, s.technician_id,
+              t.employee_id AS technician_employee_id,
+              s.assignment_type, s.status, s.duration_minutes, s.scheduled_end_at, s.started_at,
+              s.ended_at, s.price_cents, s.queue_position_snapshot, s.version, s.created_at
+       FROM service_sessions s
+       JOIN visits v ON v.id = s.visit_id
+       JOIN stores st ON st.id = s.store_id
+       LEFT JOIN technicians t ON t.id = s.technician_id
+       WHERE ${conds.join(' AND ')}
+       ORDER BY s.created_at DESC
+       LIMIT $${i}`,
+      params,
+    );
+    return { data: { items: rows, nextCursor: null } };
+  }
+
   // ───────────────────────────── commands ─────────────────────────────
 
   /**

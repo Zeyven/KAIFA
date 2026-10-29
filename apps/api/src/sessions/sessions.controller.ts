@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Inject, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Inject,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { RequirePermissions } from '../common/decorators';
@@ -80,6 +90,27 @@ export class SessionsController {
     @Body(new ZodValidationPipe(createBody)) body: z.infer<typeof createBody>,
   ): Promise<{ data: unknown }> {
     return this.service.create(this.ctxOf(req), req.principal!.orgId, body);
+  }
+
+  @RequirePermissions('service.read')
+  @Get()
+  list(
+    @Req() req: FastifyRequest,
+    @Query('technicianId') technicianId?: string,
+    @Query('roomId') roomId?: string,
+    @Query('status') status?: string,
+    @Query('activeOnly') activeOnly?: string,
+    @Query('today') today?: string,
+    @Query('limit') limit?: string,
+  ): Promise<{ data: unknown }> {
+    return this.service.list(req.authStoreId!, {
+      technicianId: technicianId || undefined,
+      roomId: roomId || undefined,
+      status: status || undefined,
+      activeOnly: activeOnly === '1' || activeOnly === 'true',
+      today: today === '1' || today === 'true',
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   @RequirePermissions('service.read')

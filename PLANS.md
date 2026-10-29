@@ -18,7 +18,7 @@ gates executed with recorded evidence) · `BLOCKED` (external dependency — nam
 | 05 | Scheduling | DONE | queue/recommend/assign/concurrency (§6.4 race green) |
 | 06 | Visit / ServiceSession | DONE | sessions lifecycle + room/tech sync; visit via room open |
 | 07 | FrontDesk Room Board | DONE | login+board+commands via Next proxy; slice E2E 5/5 |
-| 08 | Clock Board | TODO | queue/recommend UI + explainability |
+| 08 | Clock Board | DONE | queue/recommend UI + explainability + dispatch flow |
 | 09 | Android Enrollment | TODO | device enrollment/binding (needs Android env → likely BLOCKED here) |
 | 10 | Android Room Core | TODO | kiosk flow (env-blocked) |
 | 11 | Order Engine | TODO | order/items/pricing/discount/checkout snapshot |

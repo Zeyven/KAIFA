@@ -66,6 +66,9 @@ export default function FrontDeskLayout({ children }: { children: ReactNode }) {
           <Link href="/frontdesk/rooms" className={pathname === '/frontdesk/rooms' ? 'on' : ''}>
             房态大屏
           </Link>
+          <Link href="/frontdesk/clock" className={pathname === '/frontdesk/clock' ? 'on' : ''}>
+            钟房
+          </Link>
         </nav>
         <div className="fd-session">
           <label>

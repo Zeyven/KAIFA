@@ -164,6 +164,47 @@ describe('FrontDesk vertical slice (Next proxy → API → PG)', () => {
     expect(body.data.operational_state).toBe('OCCUPIED_WAITING_SERVICE');
   });
 
+  it('clock-board reads through the proxy: variants + queue + recommend', async () => {
+    const auth = {
+      authorization: `Bearer ${token}`,
+      'x-store-id': t.storeA,
+      'content-type': 'application/json',
+    };
+    const variants = await fetch(`${WEB}/api/v1/service-variants`, { headers: auth });
+    expect(variants.status).toBe(200);
+    const vBody = (await variants.json()) as { data: { items: Array<{ code: string }> } };
+    expect(vBody.data.items.map((v) => v.code)).toEqual(expect.arrayContaining(['V90', 'V60']));
+
+    const queue = await fetch(`${WEB}/api/v1/scheduling/queue`, { headers: auth });
+    expect(queue.status).toBe(200);
+
+    // clock-in one technician so recommend has a candidate (real flow)
+    const clock = await fetch(`${WEB}/api/v1/technicians/${t.tech1}/clock-in`, {
+      method: 'POST',
+      headers: auth,
+      body: '{}',
+    });
+    expect(clock.status).toBe(201);
+    const rec = await fetch(`${WEB}/api/v1/scheduling/recommend`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({}),
+    });
+    expect(rec.status).toBe(201);
+    const rBody = (await rec.json()) as {
+      data: {
+        selected?: { technicianId: string };
+        weights: Record<string, number>;
+        policy: string;
+      };
+    };
+    expect(rBody.data.selected?.technicianId).toBe(t.tech1);
+    expect(rBody.data.policy).toContain('BUSINESS POLICY');
+
+    const sessions = await fetch(`${WEB}/api/v1/service-sessions?today=1`, { headers: auth });
+    expect(sessions.status).toBe(200);
+  });
+
   it('error envelope survives the proxy (401 without token)', async () => {
     const res = await fetch(`${WEB}/api/v1/rooms`);
     expect(res.status).toBe(401);

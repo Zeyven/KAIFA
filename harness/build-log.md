@@ -240,3 +240,17 @@ cross-store fetch → 404.
 
 - **#48 cold-build ordering**: `packages/db` + `apps/api` projects compiled `*.int.test.ts` that import `@lanxu/testkit` WITHOUT a project reference (testkit→db makes that edge circular) — the typecheck only ever passed because stale `dist/` declarations already existed. Fix: exclude `src/**/*.int.test.ts` from those composite projects; new `tsconfig.tests.json` typechecks all integration tests AFTER `tsc -b` (script chain: `tsc -b && tsc -p tsconfig.tests.json && web`). Proven by wiping all build outputs first.
 - **#49 restore semantics**: excluded artifacts (node_modules, dist, .next, tsbuildinfo) do not survive a workspace restore — recovery is `git fetch` + mixed reset to the remote tip + `npm ci` + cold verify; never re-create history by hand.
+
+## 2026-10-29 · Phase 08 Clock Board (full gate chain)
+
+| Step | What ran | Evidence | Result |
+|---|---|---|---|
+| #42 | API (additive reads) | `GET /v1/service-sessions` (store-scoped; technicianId/roomId/status/activeOnly/today filters — today aligned to VISIT business_date cutoff math) + `GET /v1/service-variants` (org catalog, service.read) | sessions.int **13/13** (list: scope/filters/cross-store) |
+| #43 | unit | `clock-board.test.ts` — §9.3 columns derived from live reads only (排位 from effective-key order, 点钟=REQUESTED, 空闲=floor minutes, ASSIGNED entries unranked) + api envelope tests | web **11/11** |
+| #44 | e2e | `web-proxy.int.test.ts` extended: variants + queue + clock-in + recommend + today sessions through the Next proxy | **6/6 passed** |
+| #45 | gate | `npm run verify` | **EXIT 0**; unit **85/85** (14 files); integration **82/82** (9 files) |
+
+### Root causes fixed during Phase 08 (never papered over)
+
+- **#50 query-param booleans**: filter params arrive as strings (`activeOnly=1|true`) — normalized at the controller edge, never truthiness-tested raw.
+- **#51 clock-board position null math**: `position > 0` on `number | null` (TS18047) → explicit null narrowing; compensation test asserted inverted effective-key order → expectation corrected to (1000 < 1998).

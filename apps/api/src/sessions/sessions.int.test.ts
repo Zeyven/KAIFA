@@ -508,6 +508,50 @@ describe('visit + service sessions (integration)', () => {
     expect(crossCreate.status).toBe(404);
   });
 
+  it('GET /v1/service-sessions list: store-scoped + technician/today/active filters', async () => {
+    const all = await call({
+      url: '/v1/service-sessions',
+      token: bossToken,
+      storeId: t.storeA,
+    });
+    expect(all.status).toBe(200);
+    apiSuccessSchema.parse(all.body);
+    const items = (all.body.data as { items: Array<{ id: string }> }).items;
+    expect(items.length).toBeGreaterThanOrEqual(4); // sessions 1,2,3 + worker session
+
+    const byTech = await call({
+      url: `/v1/service-sessions?technicianId=${t.tech1}`,
+      token: bossToken,
+      storeId: t.storeA,
+    });
+    const techItems = (byTech.body.data as { items: Array<{ id: string }> }).items;
+    expect(techItems.map((x) => x.id)).toContain(session1);
+
+    const today = await call({
+      url: '/v1/service-sessions?today=1',
+      token: bossToken,
+      storeId: t.storeA,
+    });
+    expect((today.body.data as { items: unknown[] }).items.length).toBeGreaterThanOrEqual(4);
+
+    // session2 (DRAFT, never assigned) is the only non-terminal row left
+    const active = await call({
+      url: '/v1/service-sessions?activeOnly=1',
+      token: bossToken,
+      storeId: t.storeA,
+    });
+    const activeItems = (active.body.data as { items: Array<{ id: string }> }).items;
+    expect(activeItems.map((x) => x.id)).toEqual([session2]);
+
+    // cross-store scoping
+    const other = await call({
+      url: '/v1/service-sessions',
+      token: clerkToken,
+      storeId: t.storeB,
+    });
+    expect((other.body.data as { items: unknown[] }).items).toHaveLength(0);
+  });
+
   it('append-only: service_session_events rejects UPDATE/DELETE (23001)', async () => {
     await expect(
       db.query(`UPDATE service_session_events SET event_type = 'X'`),

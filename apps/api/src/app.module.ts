@@ -6,6 +6,7 @@ import { RoomsModule } from './rooms/rooms.module';
 import { TechniciansModule } from './technicians/technicians.module';
 import { SchedulingModule } from './scheduling/scheduling.module';
 import { SessionsModule } from './sessions/sessions.module';
+import { CatalogModule } from './catalog/catalog.module';
 
 /**
  * Root application module (modular monolith — spec §2.1). One module per
@@ -22,6 +23,7 @@ import { SessionsModule } from './sessions/sessions.module';
     TechniciansModule,
     SchedulingModule,
     SessionsModule,
+    CatalogModule,
   ],
 })
 export class AppModule {}

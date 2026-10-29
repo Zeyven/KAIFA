@@ -521,3 +521,152 @@ code {
   margin-left: 0.5rem;
   padding: 0.3rem 0.5rem;
 }
+
+/* ── Phase 08 钟房 (§9.3) ───────────────────────────────────────── */
+.clock {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.clock-dispatch {
+  margin-bottom: 1.1rem;
+}
+.clock-form {
+  display: flex;
+  gap: 0.7rem;
+  align-items: end;
+  flex-wrap: wrap;
+  margin: 0.5rem 0;
+}
+.clock-form label {
+  font-size: 0.88rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.clock-form select {
+  padding: 0.4rem 0.5rem;
+  min-width: 16rem;
+}
+.clock-form button,
+.clock-actions button {
+  padding: 0.4rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid #c6ccd8;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+.clock-actions button {
+  background: transparent;
+  color: inherit;
+}
+.clock-form button:disabled {
+  opacity: 0.5;
+}
+.recommend-card {
+  border: 1.5px solid #d9dee7;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  background: color-mix(in srgb, #fff 90%, transparent);
+  margin-top: 0.6rem;
+}
+@media (prefers-color-scheme: dark) {
+  .recommend-card {
+    background: #171c25;
+    border-color: #2a3240;
+  }
+}
+.recommend-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+.recommend-selected {
+  margin: 0.25rem 0;
+  color: var(--accent);
+  font-weight: 600;
+}
+.recommend-none {
+  color: var(--muted);
+  font-style: italic;
+}
+.recommend-excluded {
+  margin: 0.4rem 0;
+  padding-left: 1.2rem;
+  font-size: 0.88rem;
+}
+.recommend-excluded code {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 0.05rem 0.3rem;
+  border-radius: 5px;
+}
+@media (prefers-color-scheme: dark) {
+  .recommend-excluded code {
+    background: #3f1d1d;
+    color: #fca5a5;
+  }
+}
+.recommend-weights {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0.5rem 0 0;
+}
+.clock-table-wrap {
+  overflow-x: auto;
+}
+.clock-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.92rem;
+}
+.clock-table th,
+.clock-table td {
+  border-bottom: 1px solid #d9dee7;
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+}
+@media (prefers-color-scheme: dark) {
+  .clock-table th,
+  .clock-table td {
+    border-color: #2a3240;
+  }
+}
+.clock-table th {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.clock-table tr[data-status='AVAILABLE'] td:nth-child(2) {
+  color: #16a34a;
+  font-weight: 700;
+}
+.clock-table tr[data-status='SERVING'] td:nth-child(2) {
+  color: #d97706;
+  font-weight: 700;
+}
+.clock-table tr[data-status='LOCKED'] td:nth-child(2) {
+  color: #dc2626;
+  font-weight: 700;
+}
+.clock-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.clock-queue {
+  margin-top: 1.4rem;
+}
+.clock-queue h2 {
+  font-size: 1rem;
+}
+.clock-queue ol {
+  padding-left: 1.4rem;
+  margin: 0.4rem 0;
+}
+.clock-queue li {
+  margin-bottom: 0.25rem;
+}
+.muted {
+  color: var(--muted);
+}
