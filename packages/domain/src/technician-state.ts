@@ -29,7 +29,14 @@ export type TechnicianCommand =
   | 'BREAK_END'
   | 'LOCK'
   | 'UNLOCK'
-  | 'CLOCK_OUT';
+  | 'CLOCK_OUT'
+  /**
+   * Release a pre-service assignment back to AVAILABLE (spec gap-fill: the §5.2
+   * table has no release edge, yet §5.3 change-technician/cancel must free an
+   * ASSIGNED/GOING_TO_ROOM/WAITING_START technician). BUSINESS POLICY —
+   * REQUIRES PILOT VALIDATION.
+   */
+  | 'RELEASE';
 
 export interface TechnicianTransitionGuards {
   /** Employee has a current/valid shift (CLOCK_IN). */
@@ -61,12 +68,15 @@ const TABLE: Partial<Record<TechnicianState, Partial<Record<TechnicianCommand, T
     },
     ASSIGNED: {
       ACK: 'GOING_TO_ROOM',
+      RELEASE: 'AVAILABLE',
     },
     GOING_TO_ROOM: {
       ARRIVE: 'WAITING_START',
+      RELEASE: 'AVAILABLE',
     },
     WAITING_START: {
       START_SERVICE: 'SERVING',
+      RELEASE: 'AVAILABLE',
     },
     SERVING: {
       COMPLETE_SERVICE: 'AVAILABLE', // replaced by recompute below
@@ -114,6 +124,7 @@ export const TECHNICIAN_COMMANDS: readonly TechnicianCommand[] = [
   'LOCK',
   'UNLOCK',
   'CLOCK_OUT',
+  'RELEASE',
 ] as const;
 
 /** Target after a completed service: recompute, never unconditional AVAILABLE. */

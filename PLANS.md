@@ -16,7 +16,7 @@ gates executed with recorded evidence) · `BLOCKED` (external dependency — nam
 | 03 | Room Domain | DONE | 0002 rooms/visits/audit+outbox (append-only 23001), §5.1 machine, open/move/cleaning/maintenance/disable commands (tx+FOR UPDATE+version 409) — rooms.int 12/12 + migrations chain 9/9 |
 | 04 | Technician Domain | DONE | technician/skill/shift/status/history; queue lifecycle |
 | 05 | Scheduling | DONE | queue/recommend/assign/concurrency (§6.4 race green) |
-| 06 | Visit / ServiceSession | TODO | full service execution chain |
+| 06 | Visit / ServiceSession | DONE | sessions lifecycle + room/tech sync; visit via room open |
 | 07 | FrontDesk Room Board | TODO | first real web vertical slice on live API |
 | 08 | Clock Board | TODO | queue/recommend UI + explainability |
 | 09 | Android Enrollment | TODO | device enrollment/binding (needs Android env → likely BLOCKED here) |

@@ -193,3 +193,23 @@ cross-store fetch → 404.
 - **#34 test-order state leak**: failed assertion placed BEFORE the state-restore line left tech2 LOCKED → cascade of 7 failures from 3 real bugs. Root fixes: V90/V60 skill split (tech2 lacks V90 — correct 422), force-denial uses aide@A (clerk lives at storeB → scope 403 message, not perm), success-assign targets the variant the tech HAS skill for; restore mutations run before assertions.
 - **#35 seedTenant alias**: TS generic `no` vs SQL `employee_no` → undefined map keys; fixed with `RETURNING employee_no AS no` + size guard.
 - **#36 verify misread**: `npm run verify | grep` can report the PIPELINE status, not npm's — first "EXIT 0" hid a prettier failure. Rule: `npm run verify > log; echo $?`.
+
+## 2026-10-29 · Phase 06 Visit + ServiceSession (full gate chain)
+
+| Step | What ran | Evidence | Result |
+|---|---|---|---|
+| #32 | migration | `0004_visit_service` (service_sessions one-active-per-technician partial unique, append-only service_session_events, extensions, technician_change_requests, service.* RBAC) — migrations.int disk-driven over 0001–0004 | **9/9 passed** |
+| #33 | unit | domain `session-state` (§5.3 machine: chain, exceptions DRAFT/ASSIGNED cancel + ASSIGNED reject, terminal rejection, guard facts) + `technician-state` RELEASE edges (+1) | **51 domain tests passed** (7 files) |
+| #34 | integration | `sessions.int.test.ts`: visit via room open + one-active-per-room 23505, DRAFT create/GET, assign (tech+queue+events+audit), partial-unique double-assign 422, invalid-transition 422 + stale 409, worker 403 object gate, full lifecycle ack→arrive→start→extend→complete with tech progression + room IN_SERVICE→WAITING_CHECKOUT + REQUEUE, worker self-service + terminate perm split, change-technician (old released/requeued, new assigned, APPROVED workflow row) + change-service price re-snapshot, start→terminate exception path, cross-store 404, append-only 23001, 10 distinct audit actions | **12/12 passed** |
+| #35 | gate (Phase 06 pre-commit) | `npm run verify` (log-file exit capture) | **EXIT 0**; unit **74/74** (12 files); integration **75/75** (8 files); format/lint/typecheck/openapi/build green |
+
+### Root causes fixed during Phase 06 (never papered over)
+
+- **#37 duplicate `visits` DDL**: 0004 re-declared visits already owned by 0002 (status `ACTIVE` not `OPEN`) → dropped from 0004; visits stay owned by 0002 (expand/contract discipline).
+- **#38 missing uuid defaults**: 0004 tables' `id` had no `DEFAULT lanxu_uuidv7()` → NOT NULL violations → defaults added to all four tables.
+- **#39 domain MachineError → 500**: exception filter only mapped ApiError/Zod/Http → added MachineError branch (code+statusCode) — domain state machines now render 422 envelopes.
+- **#40 release-after-service**: terminate passed RELEASE while tech SERVING (invalid) → `releaseTechnician` auto-detects: SERVING → shift-recompute, pre-service states → RELEASE, else noop.
+- **#41 self-gate id confusion**: session rows have technician ids, actors have employee ids → lockSession now joins technicians for `technician_employee_id`; identity gate compares employee↔employee.
+- **#42 `FOR UPDATE OF` outer join**: `FOR UPDATE OF s, t` on LEFT JOIN = PG error → lock session only (`OF s`); technician rows locked in their own FOR UPDATE steps.
+- **#43 room running-set semantics**: §5.1 `no running session` = STARTED/ENDING_SOON only (DRAFT/ASSIGNED must not block WAITING_CHECKOUT) → room guard query narrowed.
+- **#44 test fixture cascade** (Batch-C analog of #34): skill matrix (tech2=V60-only) and pre-start chains (ack before start) — fixtures aligned with spec machines; restore-before-assert discipline kept.

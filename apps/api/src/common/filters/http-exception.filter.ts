@@ -1,6 +1,7 @@
 import { Catch, HttpException, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
 import { ZodError } from 'zod';
 import { ApiError, type ErrorCode } from '@lanxu/contracts';
+import { MachineError } from '@lanxu/domain';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Logger } from '@lanxu/observability';
 
@@ -46,6 +47,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       code = exception.code;
       message = exception.message;
       details = exception.details;
+    } else if (exception instanceof MachineError) {
+      // domain state-machine violation carries its own HTTP mapping (§7.2/§7.3)
+      status = exception.statusCode;
+      code = exception.code as ErrorCode;
+      message = exception.message;
     } else if (exception instanceof ZodError) {
       status = 400;
       code = 'VALIDATION_FAILED';

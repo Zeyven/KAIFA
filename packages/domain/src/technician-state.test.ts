@@ -19,6 +19,9 @@ const LEGAL: Array<[TechnicianState, TechnicianCommand, TechnicianState]> = [
   ['BREAK', 'BREAK_END', 'AVAILABLE'],
   ['AVAILABLE', 'LOCK', 'LOCKED'],
   ['LOCKED', 'UNLOCK', 'AVAILABLE'],
+  ['ASSIGNED', 'RELEASE', 'AVAILABLE'],
+  ['GOING_TO_ROOM', 'RELEASE', 'AVAILABLE'],
+  ['WAITING_START', 'RELEASE', 'AVAILABLE'],
 ];
 
 const OK_GUARDS = { onShift: true, assignable: true, sessionActive: true } as const;
@@ -68,6 +71,16 @@ describe('technician state machine (spec §5.2)', () => {
     const res = canTransitionTechnician('AVAILABLE', 'COMPLETE_SERVICE');
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe('INVALID_STATE_TRANSITION');
+  });
+
+  it('RELEASE frees pre-service states back to AVAILABLE (§5.3 change-technician support)', () => {
+    for (const from of ['ASSIGNED', 'GOING_TO_ROOM', 'WAITING_START'] as const) {
+      const r = canTransitionTechnician(from, 'RELEASE', { onShift: true });
+      expect(r.ok, from).toBe(true);
+      if (r.ok) expect(r.next).toBe('AVAILABLE');
+    }
+    expect(canTransitionTechnician('SERVING', 'RELEASE', { onShift: true }).ok).toBe(false);
+    expect(canTransitionTechnician('AVAILABLE', 'RELEASE', { onShift: true }).ok).toBe(false);
   });
 
   it('clock-out only from eligible (non-serving) states', () => {
