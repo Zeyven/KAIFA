@@ -1,7 +1,12 @@
 const PHASES = [
-  { id: '00', name: 'Repository Foundation', status: 'IN PROGRESS' },
-  { id: '01', name: 'Database Foundation', status: 'TODO' },
-  { id: '07', name: 'FrontDesk Room Board', status: 'TODO' },
+  { id: '00', name: 'Repository Foundation', status: 'DONE' },
+  { id: '01', name: 'Database Foundation', status: 'DONE' },
+  { id: '02', name: 'Authentication + Authorization', status: 'DONE' },
+  { id: '03', name: 'Room Domain', status: 'DONE' },
+  { id: '04', name: 'Technician', status: 'DONE' },
+  { id: '05', name: 'Scheduling', status: 'DONE' },
+  { id: '06', name: 'Visit / ServiceSession', status: 'DONE' },
+  { id: '07', name: 'FrontDesk Room Board', status: 'IN PROGRESS' },
 ];
 
 export default function HomePage() {

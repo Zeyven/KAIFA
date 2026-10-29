@@ -213,3 +213,17 @@ cross-store fetch → 404.
 - **#42 `FOR UPDATE OF` outer join**: `FOR UPDATE OF s, t` on LEFT JOIN = PG error → lock session only (`OF s`); technician rows locked in their own FOR UPDATE steps.
 - **#43 room running-set semantics**: §5.1 `no running session` = STARTED/ENDING_SOON only (DRAFT/ASSIGNED must not block WAITING_CHECKOUT) → room guard query narrowed.
 - **#44 test fixture cascade** (Batch-C analog of #34): skill matrix (tech2=V60-only) and pre-start chains (ack before start) — fixtures aligned with spec machines; restore-before-assert discipline kept.
+
+## 2026-10-29 · Phase 07 FrontDesk Room Board (vertical slice, full gate chain)
+
+| Step | What ran | Evidence | Result |
+|---|---|---|---|
+| #36 | unit | `apps/web/src/lib/api.test.ts` — boardStats live-derived KPIs (revenue stays null pre-Phase-08), 9 room labels + 8 tech labels completeness, envelope unwrap/error code, relative-path + auth-header rules, SSR-safe storage | **8/8 passed** |
+| #37 | e2e (browserless vertical slice) | `web-proxy.int.test.ts`: real PG18 + real Nest (`dist/main.js`) + real `next dev` — SSR /login HTML, POST /api/v1/auth/login THROUGH the Next proxy, GET rooms, command write-through open→OCCUPIED_WAITING_SERVICE, 401 frozen envelope via proxy | **5/5 passed** |
+| #38 | gate (Phase 07 pre-commit) | `npm run verify` (log-file exit capture) | **EXIT 0**; unit **82/82** (13 files); integration **80/80** (9 files); format/lint/typecheck/openapi/build green |
+
+### Root causes fixed during Phase 07 (never papered over)
+
+- **#45 tsx cannot boot Nest**: esbuild transform rejects parameter decorators without `experimentalDecorators` → E2E boots the compiled `dist/main.js` (with `tsc -b` freshness guard in beforeAll), not tsx.
+- **#46 health path**: readiness endpoint is `/health/ready` (not `/health`) — waiter corrected.
+- **#47 relative import depth**: app-dir depth (login vs frontdesk/rooms/[roomId]) tripped `../lib` paths → fixed per file; typecheck green.
