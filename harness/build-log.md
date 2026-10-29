@@ -227,3 +227,16 @@ cross-store fetch → 404.
 - **#45 tsx cannot boot Nest**: esbuild transform rejects parameter decorators without `experimentalDecorators` → E2E boots the compiled `dist/main.js` (with `tsc -b` freshness guard in beforeAll), not tsx.
 - **#46 health path**: readiness endpoint is `/health/ready` (not `/health`) — waiter corrected.
 - **#47 relative import depth**: app-dir depth (login vs frontdesk/rooms/[roomId]) tripped `../lib` paths → fixed per file; typecheck green.
+
+## 2026-10-29 · Workspace restore + cold-build ordering fix
+
+| Step | What ran | Evidence | Result |
+|---|---|---|---|
+| #39 | recovery | Workspace snapshot restore reset local git history to `a087d9c` and wiped node_modules/dist (uniform 08:29 mtimes). Remote tip `92efa37` intact → `git fetch` + mixed `git reset 92efa37` (working tree untouched, only 2 untracked preview scripts) → `npm ci` (0 vulnerabilities) | history chain 05ced5b→…→92efa37 restored; tree clean |
+| #40 | cold build | Wiped every dist/ + tsbuildinfo, `npm run typecheck` from zero | **EXIT 0** (after fix below) |
+| #41 | gate | `npm run verify` after restore | **EXIT 0**; unit **82/82** (13 files); integration **80/80** (9 files) |
+
+### Root causes fixed (never papered over)
+
+- **#48 cold-build ordering**: `packages/db` + `apps/api` projects compiled `*.int.test.ts` that import `@lanxu/testkit` WITHOUT a project reference (testkit→db makes that edge circular) — the typecheck only ever passed because stale `dist/` declarations already existed. Fix: exclude `src/**/*.int.test.ts` from those composite projects; new `tsconfig.tests.json` typechecks all integration tests AFTER `tsc -b` (script chain: `tsc -b && tsc -p tsconfig.tests.json && web`). Proven by wiping all build outputs first.
+- **#49 restore semantics**: excluded artifacts (node_modules, dist, .next, tsbuildinfo) do not survive a workspace restore — recovery is `git fetch` + mixed reset to the remote tip + `npm ci` + cold verify; never re-create history by hand.

@@ -15,7 +15,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "typecheck": "tsc -b && npm run typecheck --workspace @lanxu/web",
+    "typecheck": "tsc -b && tsc -p tsconfig.tests.json && npm run typecheck --workspace @lanxu/web",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "build": "tsc -b && npm run build --workspace @lanxu/web",
